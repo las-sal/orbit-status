@@ -34,6 +34,8 @@ The top-level keys MUST include `project`, `focus`, `active`, `exploring`, `rece
 
 The `--detail` flag SHALL include additional per-change fields in both human-readable and JSON output.
 
+By default (no `--detail`), `ChangeRecord.review_history` SHALL emit two summary fields: `iterations_total` (count of all `review-*` and `address-reviews-*` JSONs in the change's `.orbit-runs/`) and `findings_resolved` (sum of `resolution_summary.resolved` across all `address-reviews-*` JSONs in the change's `.orbit-runs/`).
+
 `--detail` MUST add: the full review-history breakdown by mode (proposal-internal/external, system-internal/external, per-mode address-reviews counts), full `text` for each attention entry, the `source` field inside `recommended_next`, and the `next_unchecked` task description inside `tasks`.
 
 #### Scenario: --detail expands review history
@@ -91,3 +93,37 @@ orbit-status SHALL handle the three classes of runtime failure deterministically
 #### Scenario: malformed JSON in .orbit-runs/
 - **WHEN** a `.orbit-runs/*.json` file fails to parse as JSON
 - **THEN** orbit-status logs a warning to stderr naming the file and continues the run, treating that file's data as absent (does not fail the whole invocation)
+
+### Requirement: archived_at field on archived ChangeRecords
+
+Each `ChangeRecord` in the `recent[]` array SHALL include an `archived_at` field carrying an ISO-8601 timestamp of when the change was archived. The source SHALL be resolved in the following priority order — first available wins:
+
+1. The `timestamp` field from a `.orbit-runs/archive-<TS>.json` file within the archived change directory (most precise; emitted by `/opsx:archive`).
+2. The date parsed from the change's archived directory name (`openspec/changes/archive/<YYYY-MM-DD>-<name>/`) interpreted as `<YYYY-MM-DD>T00:00:00Z` (day precision; UTC midnight).
+3. The archived directory's filesystem `mtime` as ISO-8601 (least reliable; final fallback).
+
+#### Scenario: archive JSON timestamp wins when present
+- **WHEN** an archived change has `.orbit-runs/archive-<TS>.json` inside the archived directory
+- **THEN** `archived_at` is set to that JSON's `timestamp` field value
+
+#### Scenario: dated directory name when archive JSON is absent
+- **WHEN** an archived change has no `archive-*.json`, but its directory is named `openspec/changes/archive/<YYYY-MM-DD>-<name>/`
+- **THEN** `archived_at` is set to `<YYYY-MM-DD>T00:00:00Z` (UTC midnight on that date)
+
+#### Scenario: directory mtime as last resort
+- **WHEN** neither an `archive-*.json` nor a parseable `<YYYY-MM-DD>-` prefix on the directory name is available
+- **THEN** `archived_at` is set to the directory's mtime, formatted as ISO-8601
+
+### Requirement: next_unchecked extraction rule
+
+When `--detail` is set, `ChangeRecord.tasks.next_unchecked` SHALL be the description text of the first line in the change's `tasks.md` matching the regex `^- \[ \] [0-9]+\.[0-9]+ (.+)$` (i.e., an unchecked checkbox prefixed with an `N.M` task-number). Lines that don't match (malformed checkboxes, nested sub-bullets, free-form prose between groups) SHALL be skipped.
+
+If no matching line exists in `tasks.md`, `next_unchecked` is null.
+
+#### Scenario: next_unchecked is the first matching unchecked line
+- **WHEN** `--detail` is set and `tasks.md` has lines `- [x] 1.1 Done thing`, `- [ ] 1.2 Pending thing`, `- [ ] 1.3 Later thing`
+- **THEN** `tasks.next_unchecked` is `"Pending thing"`
+
+#### Scenario: malformed lines are skipped
+- **WHEN** `tasks.md` has `- [ ] Foo` (no `N.M` prefix), then `- [ ] 2.1 Real task`
+- **THEN** `tasks.next_unchecked` is `"Real task"` (the unprefixed `Foo` is skipped)

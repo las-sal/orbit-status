@@ -1,3 +1,11 @@
+The 18 task groups below break naturally into 5 implementation chunks. `/opsx:apply` can pause at chunk boundaries for review:
+
+1. **Scaffold + project detection** — groups 1–3 (skill dirs, CLI binary skeleton + arg parsing, `is_orbit_project` detection)
+2. **Inventory + parsing** — groups 4–6 (filesystem walk of changes/explorations/archive, `tasks.md` checkbox parsing, JSON ingestion from `.orbit-runs/`)
+3. **Phase + attention + recommendation engine** — groups 7–10 (phase inference precedence, attention signal detection, 3-tier recommendation hierarchy, multi-change focus ranking)
+4. **Output + degradation** — groups 11–13 (JSON emission, human-readable rendering, plain-openspec graceful degradation)
+5. **Integration + docs + validation** — groups 14–18 (slash command wrapper, skill documentation, bats/shell tests, README, manual validation against real projects)
+
 ## 1. Skill scaffolding
 
 - [ ] 1.1 Create `.claude/skills/openspec-status/` directory
@@ -24,6 +32,7 @@
 - [ ] 4.2 Enumerate explorations under `openspec/explore/`
 - [ ] 4.3 Enumerate archived changes under `openspec/changes/archive/`
 - [ ] 4.4 For each change/exploration, collect `artifacts_present` list (proposal, design, tasks, specs, explore, sketches) and `last_touched` mtime
+- [ ] 4.5 For each archived change in `recent[]`, compute `archived_at` per the 3-tier priority: (1) `timestamp` field from any `.orbit-runs/archive-<TS>.json`; (2) parse `<YYYY-MM-DD>-` prefix from the archived directory name, interpret as UTC midnight; (3) directory mtime as last resort. Emit as ISO-8601.
 
 ## 5. `tasks.md` parsing
 
@@ -37,11 +46,12 @@
 - [ ] 6.3 Extract `iteration`, `findings_summary`, `next_recommended`, `final_assessment` from the most recent JSON
 - [ ] 6.4 Sum review and address-reviews counters across all JSONs for `iterations_total` and `findings_resolved` (default view)
 - [ ] 6.5 Build per-mode breakdown counters (proposal-internal/external, system-internal/external, address-reviews-proposal/system) for `--detail`
+- [ ] 6.6 Handle JSON parse failures gracefully: when `jq` fails to parse a `.orbit-runs/*.json` file, log a warning to stderr naming the file, treat that file's data as absent, and continue the run (do not fail the whole invocation; satisfies the Error handling requirement in `orbit-status-output` spec)
 
 ## 7. Phase inference
 
 - [ ] 7.1 Implement precedence rule 1: under `openspec/changes/archive/` → `archived`
-- [ ] 7.2 Implement rule 2: most recent `.orbit-runs/*.json` command type → `reviewing` (review/address-reviews) or `archived` (archive)
+- [ ] 7.2 Implement rule 2: most recent `.orbit-runs/*.json` command type → `reviewing` (review/address-reviews) or `archived` (archive), **provided the JSON's filename timestamp is newer than `tasks.md` mtime**; if not, fall through to rule 3
 - [ ] 7.3 Implement rule 3: `tasks.md` with partial completion (some `[x]`, some `[ ]`) → `applying`
 - [ ] 7.4 Implement rule 4: `proposal.md` exists, no completed tasks → `proposed`
 - [ ] 7.5 Implement rule 5: only `explore.md` exists in `openspec/explore/<name>/` → `exploring`
@@ -55,15 +65,16 @@
 
 ## 9. Recommendation engine
 
-- [ ] 9.1 Tier 1: surface `next_recommended` from most recent change JSON verbatim
-- [ ] 9.2 Tier 2: implement synthesis ruleset (5 precedence-ordered rules from spec)
+- [ ] 9.1 Tier 1: surface `next_recommended` from most recent change JSON; preserve full string verbatim in `reason`; best-effort parse for leading `/opsx:<verb> [args]` token to populate `command`/`args` (null on failure)
+- [ ] 9.1a Tier 1 marker override: when unresolved `@review:` markers exist in the change's artifacts (i.e., `attention[]` contains `unresolved_marker` entries), override the JSON's recommendation to `{ command: "/opsx:address-reviews", args: "<change-name>", reason: "<N> unresolved @review: markers..." }`
+- [ ] 9.2 Tier 2: implement synthesis ruleset (4 precedence-ordered rules from spec; the 5th marker-handling rule was moved to tier 1's override per the iter-2 address-reviews resolution)
 - [ ] 9.3 Tier 3: project-level fallback `"No active workflow. Use /opsx:explore to start one."`
 - [ ] 9.4 Assemble `recommended_next` object: `command`, `args`, `reason`
 - [ ] 9.5 With `--detail`, add `source` field (tier 1 JSON path or tier 2 rule name)
 
 ## 10. Multi-change focus ranking
 
-- [ ] 10.1 Rank active + exploring threads by `last_touched` mtime descending
+- [ ] 10.1 Rank active + exploring threads by `last_touched` mtime descending; on equal mtimes, tie-break by lexicographic order of change name (ascending) for full determinism
 - [ ] 10.2 Pick `primary_change` from the top of the ranking; set `primary_change_kind` to `"active"` or `"exploring"`
 - [ ] 10.3 Build `secondary_threads[]` with `name`, `kind`, `phase`, `summary` for each non-primary thread
 - [ ] 10.4 Honor `--change <name>`: override `primary_change`; set `ranking_basis` to `"user_specified"`

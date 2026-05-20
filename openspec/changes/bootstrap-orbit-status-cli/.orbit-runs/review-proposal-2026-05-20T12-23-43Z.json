@@ -1,0 +1,172 @@
+{
+  "command": "review",
+  "timestamp": "2026-05-20T12:23:43Z",
+  "change": "bootstrap-orbit-status-cli",
+  "mode": "proposal",
+  "iteration": 3,
+  "depth": "full",
+  "flags": {
+    "parallel": false,
+    "focus": null,
+    "strict": false,
+    "fresh": true,
+    "mark": false,
+    "skip_verify": false
+  },
+  "passes_run": ["1", "2", "3", "5", "6", "7", "8", "9"],
+  "passes_skipped": ["4"],
+  "passes_skipped_reasons": {
+    "4": "no openspec/specs/ baseline (greenfield change); no archived requirements to check against"
+  },
+  "findings_summary": {
+    "critical": 0,
+    "warning": 6,
+    "suggestion": 4,
+    "by_pass": {
+      "1": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "2": { "critical": 0, "warning": 4, "suggestion": 1 },
+      "3": { "critical": 0, "warning": 1, "suggestion": 0 },
+      "5": { "critical": 0, "warning": 1, "suggestion": 1 },
+      "6": { "critical": 0, "warning": 0, "suggestion": 1 },
+      "7": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "8": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "9": { "critical": 0, "warning": 0, "suggestion": 1 }
+    }
+  },
+  "findings": [
+    {
+      "pass": "2",
+      "severity": "WARNING",
+      "file": "design.md",
+      "line": 64,
+      "title": "design.md tier-2 ruleset still lists 5 rules including the deleted marker rule — direct contradiction with spec (now 4 rules)",
+      "recommendation": "Delete the table row 'review JSON exists but unresolved `@review:` markers in artifacts | `/opsx:address-reviews <name>`' and add a parenthetical noting that marker handling moved to tier 1's marker override. iter-2 address-reviews explicitly flagged this design.md update as a ripple; the spec was changed but design.md was not."
+    },
+    {
+      "pass": "2",
+      "severity": "WARNING",
+      "file": "design.md",
+      "line": 52,
+      "title": "design.md tier-1 description says 'verbatim' but spec now requires best-effort parse + marker override",
+      "recommendation": "Update line 52 from 'read the most recent JSON's `next_recommended` field verbatim' to reflect the spec's actual behavior: full string preserved verbatim in `reason`, best-effort parse for leading `/opsx:<verb> [args]` populating `command`/`args` (null on parse failure), plus a marker-override clause. This is one of the ripples explicitly flagged by the iter-2 address-reviews resolution."
+    },
+    {
+      "pass": "2",
+      "severity": "WARNING",
+      "file": "design.md",
+      "line": 75,
+      "title": "design.md phase rule 2 omits the freshness condition that spec added",
+      "recommendation": "Update rule 2 in design.md to include the spec's freshness condition: the rule only fires when the latest `.orbit-runs/*.json` filename-timestamp is newer than `tasks.md` mtime; otherwise inference falls through to rule 3 (applying). As written, design.md and the spec contradict each other on the mid-apply-edit scenario."
+    },
+    {
+      "pass": "2",
+      "severity": "WARNING",
+      "file": "tasks.md",
+      "line": 53,
+      "title": "Multiple implementation tasks are stale relative to iter-2 spec updates (tasks 7.2, 9.1, 9.2, 10.1, 4.4)",
+      "recommendation": "Refresh these tasks to match current spec language: (a) task 7.2 should include the freshness condition on phase rule 2; (b) task 9.1 should reference best-effort parse not pure 'verbatim'; (c) task 9.2 should say '4 precedence-ordered rules' not '5'; (d) task 9.x should add a sub-task for tier-1 marker override; (e) task 10.1 should mention lexicographic tie-break on equal mtimes; (f) task 4.4 (or new task) should explicitly compute `archived_at` per the 3-source priority order (archive JSON timestamp > dated dirname > dirname mtime). The iter-2 address-reviews JSON explicitly flagged these as ripples but they weren't applied to tasks.md."
+    },
+    {
+      "pass": "3",
+      "severity": "WARNING",
+      "file": "design.md",
+      "line": 118,
+      "title": "design.md ChangeRecord field list omits `archived_at` (added to spec in iter-2)",
+      "recommendation": "Extend the ChangeRecord field list in design.md to mention `archived_at` (ISO-8601, only present on archived ChangeRecords in `recent[]`, sourced per the 3-tier priority defined in orbit-status-output spec). Without this, design.md's documented schema diverges from the spec's required fields."
+    },
+    {
+      "pass": "5",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-recommendation/spec.md",
+      "line": 7,
+      "title": "Tier-1 'most recent .orbit-runs/*.json' doesn't specify the ordering basis (filename-ts vs mtime vs content `timestamp` field)",
+      "recommendation": "Add 'ordered by the ISO-8601 timestamp embedded in each filename, descending' (matching the phrasing already adopted in phase-model rule 2). Two implementers could otherwise pick different 'most recent' definitions — phase inference and tier-1 recommendation could disagree about which JSON is latest, producing inconsistent output across consumers."
+    },
+    {
+      "pass": "2",
+      "severity": "SUGGESTION",
+      "file": "specs/orbit-status-recommendation/spec.md",
+      "line": 28,
+      "title": "Tier-2 rule 4 'no review JSON newer than tasks.md mtime' is dead text under the current tier-2 firing condition",
+      "recommendation": "Either (a) delete the 'no review JSON newer than ...' qualifier from rule 4 since tier 2 only fires when `.orbit-runs/` is absent (per Three-tier requirement line 8) — making the qualifier impossible to differentiate; or (b) relax the tier-2 entry condition to also include 'OR the latest JSON predates tasks.md', which would make rule 4 meaningful and mirror phase rule 2's freshness. Right now the parenthetical at line 30 and rule 4's wording assume different firing conditions."
+    },
+    {
+      "pass": "6",
+      "severity": "SUGGESTION",
+      "file": "specs/orbit-status-phase-model/spec.md",
+      "line": 61,
+      "title": "attention.audit_divergence `count` field references 'unresolved findings' without defining resolution semantics",
+      "recommendation": "The audit-drift run-summary schema (see `.claude/skills/openspec-audit-drift/references/run-summary-schema.md`) emits findings with `severity` but no resolution state. Define what 'unresolved' means in this context — e.g., 'count of findings in the most recent audit-drift JSON, period (v1)' OR 'count of findings not addressed by a subsequent address-reviews JSON'. Without this clarification, two implementers would pick different semantics."
+    },
+    {
+      "pass": "5",
+      "severity": "SUGGESTION",
+      "file": "specs/orbit-status-recommendation/spec.md",
+      "line": 63,
+      "title": "`focus.summary` and `secondary_threads[].summary` field content is unspecified beyond 'one-sentence rendering'",
+      "recommendation": "Add a brief format note or example (e.g., 'You are applying <name>' or '<name> is <phase> — N attention items') so two implementers produce the same string shape. Currently the field shape is set but its content template is implicit."
+    },
+    {
+      "pass": "9",
+      "severity": "SUGGESTION",
+      "file": "design.md or specs/orbit-status-output/spec.md",
+      "line": 0,
+      "title": "`review_history` summary-mode field shape (default view) is not formally specified",
+      "recommendation": "Either add a requirement that `review_history` (default view) contains `iterations_total` and `findings_resolved` (currently only documented in explore.md and tasks.md 6.4), or accept that the default view shape is implementation-defined and call that out. Without a spec home, the default summary's JSON keys could drift between implementation and consumers (slash command rendering, CI scripts)."
+    }
+  ],
+  "stale_suppressed": [
+    {
+      "pass": "5",
+      "title": "'one-screen' not defined; could split implementations",
+      "evidence": "Resolved at specs/orbit-status-output/spec.md:5 — soft-target language adopted ('designed to fit approximately 24 terminal lines for typical projects; MAY exceed when many threads are active; MUST NOT truncate output to enforce a hard line limit'). Address-reviews iter-1 marker resolution."
+    },
+    {
+      "pass": "5",
+      "title": "--limit N: behavior with N=0 or negative N unspecified",
+      "evidence": "Resolved at specs/orbit-status-output/spec.md:59 — non-negative integer constraint added; scenarios cover --limit 0 → empty recent[] and --limit -1 → non-zero exit. Address-reviews iter-1."
+    },
+    {
+      "pass": "5",
+      "title": "phase rule 2 'most recent JSON' ambiguous — by which timestamp?",
+      "evidence": "Resolved at specs/orbit-status-phase-model/spec.md:18 — 'ordered by the ISO-8601 timestamp embedded in each filename ... descending' added. Address-reviews iter-1. Note: the same ambiguity surfaced fresh in tier 1 (see WARNING above) but the phase-model occurrence is fixed."
+    },
+    {
+      "pass": "5",
+      "title": "Tier-2 rule 4 — 'task edit' definition ambiguous (file mtime vs git commit?)",
+      "evidence": "Resolved at specs/orbit-status-recommendation/spec.md:28 — 'no review JSON newer than the most recent `tasks.md` mtime (file modification time)'. Address-reviews iter-1. (A separate SUGGESTION above flags that the qualifier is now dead text under the tier-2 firing condition, but the original ambiguity is resolved.)"
+    },
+    {
+      "pass": "6",
+      "title": "Edge case unspecified: both explore.md AND changes/<name>/ exist (mid-promotion state)",
+      "evidence": "Resolved at specs/orbit-status-phase-model/spec.md:15-23, 46-48 — 'Change-directory precedence' preamble + 'Mid-promotion' scenario. Address-reviews iter-1."
+    },
+    {
+      "pass": "6",
+      "title": "Error paths not specified (missing openspec/, missing jq, corrupted .orbit-runs JSON)",
+      "evidence": "Resolved at specs/orbit-status-output/spec.md:79-93 — new 'Error handling' requirement with 3 scenarios. Address-reviews iter-1."
+    },
+    {
+      "pass": "5",
+      "title": "Multi-change tie-break on equal last_touched mtimes unspecified",
+      "evidence": "Resolved at specs/orbit-status-recommendation/spec.md:42 — 'ties SHALL be broken by lexicographic order of change name (ascending)'. Address-reviews iter-2 (from Codex external review)."
+    },
+    {
+      "pass": "6",
+      "title": "next_unchecked extraction logic underspecified for malformed tasks.md lines",
+      "evidence": "Resolved at specs/orbit-status-output/spec.md:115-127 — new 'next_unchecked extraction rule' requirement with regex `^- \\[ \\] [0-9]+\\.[0-9]+ (.+)$` and 2 scenarios. Address-reviews iter-2."
+    },
+    {
+      "pass": "9",
+      "title": "76 tasks across 18 groups — consider chunking note for apply",
+      "evidence": "Resolved at tasks.md:1-7 — preamble naming 5 implementation chunks (scaffold+detection, inventory+parsing, phase+attention+recommendation, output+degradation, integration+docs+validation). Address-reviews iter-2."
+    },
+    {
+      "pass": "9",
+      "title": "design.md 'Open Questions' has 3 unresolved items at proposal time",
+      "evidence": "Resolved at design.md:167-178 — each open question now has a 'Disposition' annotation marking it as 'deferred to apply-time' with a documented default. Address-reviews iter-2."
+    }
+  ],
+  "final_assessment": "No critical issues. 6 warning(s) to consider. Ready to apply (with noted improvements).",
+  "iteration_note": "First fresh-context review run. 10 prior findings from iter-1/iter-2 plus 9 Codex-external findings all verified resolved (see stale_suppressed); 10 new findings this run — 5 WARNINGs cluster on iter-2 ripple-flagged-but-unapplied updates (design.md and tasks.md falling behind spec), 1 WARNING is fresh codegen ambiguity (tier-1 'most recent' ordering basis), and the 4 SUGGESTIONs are minor codegen/schema gaps."
+}

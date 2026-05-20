@@ -49,7 +49,7 @@ Alternative considered: re-derive everything from filesystem. Rejected — dupli
 
 `focus.recommended_next` is sourced by tier:
 
-1. **Tier 1 (read from orbit)**: if `.orbit-runs/*.json` exists for the focal change, read the most recent JSON's `next_recommended` field verbatim. orbit's own recommendation wins.
+1. **Tier 1 (read from orbit)**: if `.orbit-runs/*.json` exists for the focal change, read the most recent JSON's `next_recommended` field. orbit's own recommendation wins. The full string is preserved verbatim in `reason`; orbit-status best-effort parses for a leading `/opsx:<verb> [args]` token to populate `command`/`args` (null when the string is prose with no parseable leading command). **Marker override**: when unresolved `@review:` markers exist in the change's artifacts, tier 1 overrides the JSON's recommendation to `/opsx:address-reviews <name>` — preventing markers from becoming invisible when the latest JSON's `next_recommended` doesn't reference them.
 2. **Tier 2 (synthesis, v1 only)**: if no `.orbit-runs/` for the change, synthesize from artifact presence using a small deterministic ruleset.
 3. **Tier 3 (project-level fallback)**: if no active work at all, default to `"No active workflow. Use /opsx:explore to start one."`
 
@@ -60,8 +60,9 @@ Tier 2 synthesis ruleset (precedence-ordered):
 | only `explore.md` in `openspec/explore/<name>/` | `/opsx:propose <name>` |
 | `proposal.md` exists but no `tasks.md` | `/opsx:propose <name>` (continue artifact generation) |
 | `tasks.md` with all `[ ]` unchecked, no review JSON | `/opsx:review <name>` |
-| `tasks.md` with partial checkboxes, no review since last task | `/opsx:apply <name>` |
-| review JSON exists but unresolved `@review:` markers in artifacts | `/opsx:address-reviews <name>` |
+| `tasks.md` with partial checkboxes | `/opsx:apply <name>` |
+
+(Marker handling — previously a 5th tier-2 rule — was moved to tier 1's marker override, where it actually fires. Tier 2 only runs when `.orbit-runs/` is absent; markers can only exist if a prior review-with-`--mark` ran, which means `.orbit-runs/` already contains that review's JSON. The two conditions were mutually exclusive.)
 
 Rationale: tier 1 keeps orbit-status maximally thin over orbit's voice. Tier 2 is a documented v1 stopgap; `las-sal/openspec-orbit#8` proposes that workflow commands emit run-summary JSONs upstream, which would eliminate tier 2. Tier 3 covers the empty-project case.
 
@@ -72,7 +73,7 @@ Phase enum: `exploring | proposed | applying | reviewing | verified | archived`.
 Inference precedence (first match wins):
 
 1. Change directory is under `openspec/changes/archive/` → `archived`.
-2. Most recent `.orbit-runs/*.json` command type:
+2. Most recent `.orbit-runs/*.json` command type, **provided the JSON's timestamp is newer than `tasks.md` mtime** (if the JSON predates the most recent `tasks.md` edit, rule 2 falls through to rule 3 — this handles mid-apply edits to `tasks.md` that should classify as `applying`, not stuck at `reviewing` from a stale review JSON):
    - `archive-*` → `archived` (pending file move)
    - `review-*` or `address-reviews-*` → `reviewing`
 3. `tasks.md` with any `[x]` and any `[ ]` → `applying`.
@@ -115,7 +116,7 @@ Closed enum makes "needs attention" introspectable and filterable. Extending the
 }
 ```
 
-`ChangeRecord` per-change fields: `name`, `phase`, `artifacts_present`, `tasks` (counts + `next_unchecked`), `review_history` (summary by default; full breakdown with `--detail`), `attention[]`, `last_touched`.
+`ChangeRecord` per-change fields: `name`, `phase`, `artifacts_present`, `tasks` (counts + `next_unchecked`), `review_history` (summary by default; full breakdown with `--detail`), `attention[]`, `last_touched`, `archived_at` (only present on archived records in `recent[]`; sourced per the 3-tier priority defined in `orbit-status-output` spec — `archive-*.json` timestamp > dated dirname interpreted as UTC midnight > directory mtime).
 
 ### Multi-change focus ranking
 
@@ -166,6 +167,13 @@ Greenfield change — no migration. Once shipped:
 
 ## Open Questions
 
-- **Exact `stale_review` mtime granularity**: artifact mtime > most recent `review-*.json` mtime — what's the buffer? Probably "any modification after the review JSON was written counts," but a minutes-grained tolerance might prevent noise from co-occurring edits. Defer to apply.
-- **`jq` portability cliff**: if real-world adoption hits environments without `jq`, decide between (a) requiring users to install it, (b) shipping a `python3` fallback path, (c) embedding a minimal JSON parser in bash (unlikely). Defer until evidence.
-- **Should `recent[]` include an `--all` flag**: default cap is 5 with `--limit N`; do we want `--limit 0` or `--all` to surface every archive? Probably yes — small change, useful for audit. Decide during apply.
+All three open questions below are **deferred to apply-time** with documented defaults. Implementers can proceed with the defaults and revisit if real-world usage produces evidence to the contrary.
+
+- **Exact `stale_review` mtime granularity**: artifact mtime > most recent `review-*.json` mtime — what's the buffer?
+  **Disposition**: deferred to apply-time. **Default**: any modification after the review JSON's timestamp counts as stale (no tolerance buffer). Revisit if co-occurring-edits noise produces false positives in real use.
+
+- **`jq` portability cliff**: if real-world adoption hits environments without `jq`, decide between (a) requiring users to install it, (b) shipping a `python3` fallback path, (c) embedding a minimal JSON parser in bash (unlikely).
+  **Disposition**: deferred until evidence. **Default**: `jq` is a hard dependency (per the Error handling requirement in `orbit-status-output` spec); platform install guidance ships in the README (per task 17.3). Revisit if portability bites real users.
+
+- **Should `recent[]` include an `--all` flag**: default cap is 5 with `--limit N`; do we want `--all` to surface every archive?
+  **Disposition**: deferred to apply-time. **Default**: no `--all` flag in v1. Users who want all archives pass `--limit <large-N>` (e.g., `--limit 1000`). Revisit in v2 if audit-style workflows demand it. Note: `--limit 0` produces an empty `recent[]` per the existing spec scenario; it does NOT mean "all".
