@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-VERSION="0.1.0-chunk2"
+VERSION="0.1.0-chunk3"
 
 # ============================================================================
 # Defaults
@@ -70,33 +70,15 @@ while [[ $# -gt 0 ]]; do
     --detail) DETAIL=true; shift ;;
     --json) JSON=true; shift ;;
     --change)
-      if [[ $# -lt 2 ]]; then
-        echo "Error: --change requires a change name argument" >&2
-        exit 1
-      fi
-      CHANGE="$2"
-      shift 2
-      ;;
+      [[ $# -lt 2 ]] && { echo "Error: --change requires a change name argument" >&2; exit 1; }
+      CHANGE="$2"; shift 2 ;;
     --limit)
-      if [[ $# -lt 2 ]]; then
-        echo "Error: --limit requires an integer argument" >&2
-        exit 1
-      fi
-      if ! [[ "$2" =~ ^[0-9]+$ ]]; then
-        echo "Error: --limit requires a non-negative integer, got: $2" >&2
-        exit 1
-      fi
-      LIMIT="$2"
-      shift 2
-      ;;
+      [[ $# -lt 2 ]] && { echo "Error: --limit requires an integer argument" >&2; exit 1; }
+      [[ "$2" =~ ^[0-9]+$ ]] || { echo "Error: --limit requires a non-negative integer, got: $2" >&2; exit 1; }
+      LIMIT="$2"; shift 2 ;;
     --help|-h) usage; exit 0 ;;
     --version) echo "opsx-status $VERSION"; exit 0 ;;
-    *)
-      echo "Error: unknown argument: $1" >&2
-      echo "" >&2
-      usage >&2
-      exit 1
-      ;;
+    *) echo "Error: unknown argument: $1" >&2; echo "" >&2; usage >&2; exit 1 ;;
   esac
 done
 
@@ -112,9 +94,6 @@ Install:
   macOS:        brew install jq
   Ubuntu/Debian: sudo apt-get install jq
   Other:         https://stedolan.github.io/jq/download/
-
-orbit-status uses jq for JSON parsing and emission; there is no fallback
-in v1.
 EOF
   exit 2
 fi
@@ -127,8 +106,7 @@ find_project_root() {
   local dir="$PWD"
   while [[ "$dir" != "/" ]]; do
     if [[ -d "$dir/openspec" ]]; then
-      printf '%s\n' "$dir"
-      return 0
+      printf '%s\n' "$dir"; return 0
     fi
     dir="$(dirname "$dir")"
   done
@@ -152,7 +130,6 @@ PROJECT_NAME="$(basename "$PROJECT_ROOT")"
 # Cross-platform helpers (BSD stat vs GNU stat)
 # ============================================================================
 
-# Returns POSIX epoch seconds for a file's mtime, or empty on error.
 mtime_epoch() {
   local f="$1"
   [[ ! -e "$f" ]] && return 1
@@ -163,7 +140,6 @@ mtime_epoch() {
   fi
 }
 
-# Returns ISO-8601 UTC timestamp for a file's mtime (e.g., 2026-05-20T12:34:56Z).
 mtime_iso() {
   local f="$1"
   local epoch
@@ -194,7 +170,7 @@ detect_orbit_project() {
 IS_ORBIT_PROJECT="$(detect_orbit_project)"
 
 # ============================================================================
-# Enumeration: active changes, explorations, archived changes
+# Enumeration
 # ============================================================================
 
 enumerate_active_changes() {
@@ -203,25 +179,31 @@ enumerate_active_changes() {
   find "$d" -mindepth 1 -maxdepth 1 -type d ! -name archive 2>/dev/null | sort
 }
 
+# Per spec: change-directory precedence — if openspec/changes/<name>/ exists,
+# ignore openspec/explore/<name>/ for that name.
 enumerate_explorations() {
   local d="$PROJECT_ROOT/openspec/explore"
   [[ ! -d "$d" ]] && return 0
-  find "$d" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort
+  local changes_dir="$PROJECT_ROOT/openspec/changes"
+  while IFS= read -r explore_dir; do
+    [[ -z "$explore_dir" ]] && continue
+    local name
+    name=$(basename "$explore_dir")
+    [[ -d "$changes_dir/$name" ]] && continue   # dedupe — changes wins
+    echo "$explore_dir"
+  done < <(find "$d" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort)
 }
 
 enumerate_archived_changes() {
   local d="$PROJECT_ROOT/openspec/changes/archive"
   [[ ! -d "$d" ]] && return 0
-  # Sorted reverse so newest dated-prefix shows first (also re-sorted by
-  # archived_at after computation, but this gives a sane initial order).
   find "$d" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r
 }
 
 # ============================================================================
-# Per-change collection: artifacts, last_touched, tasks counts, next_unchecked
+# Per-change collection
 # ============================================================================
 
-# Emits a JSON array (string) of artifact names present in the change dir.
 collect_artifacts_present() {
   local dir="$1"
   local present=()
@@ -238,13 +220,9 @@ collect_artifacts_present() {
   fi
 }
 
-# Returns the most recent mtime across artifact files + specs/ + .orbit-runs/
-# as ISO-8601. Falls back to 1970-01-01T00:00:00Z if no files exist.
 compute_last_touched() {
   local dir="$1"
   local newest_epoch=0
-
-  # Stat candidate files (markdown artifacts at the dir root)
   local f
   for f in "$dir/proposal.md" "$dir/design.md" "$dir/tasks.md" "$dir/explore.md"; do
     [[ -f "$f" ]] || continue
@@ -252,8 +230,6 @@ compute_last_touched() {
     epoch="$(mtime_epoch "$f")" || continue
     (( epoch > newest_epoch )) && newest_epoch=$epoch
   done
-
-  # Walk specs/ and .orbit-runs/
   local sub
   for sub in "$dir/specs" "$dir/.orbit-runs" "$dir/sketches"; do
     [[ -d "$sub" ]] || continue
@@ -276,49 +252,32 @@ compute_last_touched() {
   fi
 }
 
-# Counts [x] vs [ ] checkboxes in tasks.md. Emits JSON object or "null".
 count_tasks() {
   local tasks_file="$1"
-  if [[ ! -f "$tasks_file" ]]; then
-    echo "null"; return
-  fi
-  local completed
-  local unchecked
-  completed=$(grep -c '^- \[x\]' "$tasks_file" 2>/dev/null || true)
-  unchecked=$(grep -c '^- \[ \]' "$tasks_file" 2>/dev/null || true)
-  completed=${completed:-0}
-  unchecked=${unchecked:-0}
+  [[ ! -f "$tasks_file" ]] && { echo "null"; return; }
+  local completed unchecked
+  completed=$(grep -c '^- \[x\]' "$tasks_file" 2>/dev/null || true); completed=${completed:-0}
+  unchecked=$(grep -c '^- \[ \]' "$tasks_file" 2>/dev/null || true); unchecked=${unchecked:-0}
   local total=$((completed + unchecked))
   jq -n --argjson t "$total" --argjson c "$completed" --argjson u "$unchecked" \
     '{total: $t, completed: $c, unchecked: $u}'
 }
 
-# Extracts the description of the first `- [ ] N.M(?:a-z)? description` line
-# in tasks.md. Returns "null" if none. The optional letter suffix accommodates
-# tasks like "9.1a" which our own dogfooding produced (spec regex spec'd day-1
-# was strict N.M only; loosened here to single-letter suffix to be permissive
-# while still skipping clearly malformed lines).
 find_next_unchecked() {
   local tasks_file="$1"
-  if [[ ! -f "$tasks_file" ]]; then
-    echo null; return
-  fi
+  [[ ! -f "$tasks_file" ]] && { echo null; return; }
   local line
   line=$(grep -m1 -E '^- \[ \] [0-9]+\.[0-9]+[a-z]? ' "$tasks_file" 2>/dev/null || true)
-  if [[ -z "$line" ]]; then
-    echo null; return
-  fi
+  [[ -z "$line" ]] && { echo null; return; }
   local desc
   desc=$(echo "$line" | sed -E 's/^- \[ \] [0-9]+\.[0-9]+[a-z]? //')
   jq -n --arg d "$desc" '$d'
 }
 
 # ============================================================================
-# .orbit-runs/ JSON ingestion
+# .orbit-runs ingestion
 # ============================================================================
 
-# Lists *.json files in a change's .orbit-runs/, sorted by embedded ISO-8601
-# timestamp (which sorts lexicographically). Empty output if no dir/files.
 list_orbit_runs() {
   local change_dir="$1"
   local runs_dir="$change_dir/.orbit-runs"
@@ -326,24 +285,25 @@ list_orbit_runs() {
   find "$runs_dir" -maxdepth 1 -type f -name '*.json' 2>/dev/null | sort
 }
 
-# Returns path of most recent .orbit-runs JSON for a change (empty if none).
 latest_orbit_run() {
   list_orbit_runs "$1" | tail -1
 }
 
-# Computes review_history summary (default view): iterations_total +
-# findings_resolved. Returns "null" if no .orbit-runs/.
-#
-# - iterations_total: count of review-*.json + address-reviews-*.json files
-# - findings_resolved: sum of .resolution_summary.resolved across all
-#   address-reviews-*.json files. Malformed JSONs are warned-and-skipped.
+# Extracts the leading command type from an .orbit-runs filename:
+#   review-proposal-2026-...Z.json → "review-proposal"
+#   address-reviews-2026-...Z.json → "address-reviews"
+#   archive-2026-...Z.json         → "archive"
+#   audit-drift-2026-...Z.json     → "audit-drift"
+orbit_run_command_type() {
+  local path="$1"
+  local fname; fname=$(basename "$path"); fname="${fname%.json}"
+  echo "$fname" | sed -E 's/-[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z$//'
+}
+
 compute_review_history_summary() {
   local change_dir="$1"
   local runs_dir="$change_dir/.orbit-runs"
-
-  if [[ ! -d "$runs_dir" ]]; then
-    echo null; return
-  fi
+  [[ ! -d "$runs_dir" ]] && { echo null; return; }
 
   local iter_count
   iter_count=$(find "$runs_dir" -maxdepth 1 -type f \
@@ -371,43 +331,35 @@ compute_review_history_summary() {
 }
 
 # ============================================================================
-# archived_at (3-tier priority — spec'd in orbit-status-output)
+# archived_at (3-tier priority)
 # ============================================================================
 
-# Tier 1: archive-*.json timestamp field
-# Tier 2: <YYYY-MM-DD>- prefix on archived dir name → UTC midnight
-# Tier 3: directory mtime
 compute_archived_at() {
   local archived_dir="$1"
 
-  # Tier 1
+  # Tier 1: archive-*.json timestamp field
   local archive_json
-  archive_json=$(find "$archived_dir/.orbit-runs" -maxdepth 1 -type f \
-    -name 'archive-*.json' 2>/dev/null | sort | tail -1 || true)
+  archive_json=$(find "$archived_dir/.orbit-runs" -maxdepth 1 -type f -name 'archive-*.json' 2>/dev/null | sort | tail -1 || true)
   if [[ -n "$archive_json" && -f "$archive_json" ]]; then
     if jq -e . "$archive_json" >/dev/null 2>&1; then
       local ts
       ts=$(jq -r '.timestamp // empty' "$archive_json" 2>/dev/null || true)
-      if [[ -n "$ts" ]]; then
-        echo "$ts"; return
-      fi
+      [[ -n "$ts" ]] && { echo "$ts"; return; }
     else
       echo "Warning: failed to parse JSON: $archive_json (treating as absent)" >&2
     fi
   fi
 
-  # Tier 2
-  local dir_name
-  dir_name=$(basename "$archived_dir")
-  if [[ "$dir_name" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})- ]]; then
+  # Tier 2: dated dir prefix
+  local dn; dn=$(basename "$archived_dir")
+  if [[ "$dn" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})- ]]; then
     echo "${BASH_REMATCH[1]}T00:00:00Z"; return
   fi
 
-  # Tier 3
+  # Tier 3: dir mtime
   mtime_iso "$archived_dir"
 }
 
-# Strips <YYYY-MM-DD>- prefix from archived dir name.
 clean_archived_name() {
   local n="$1"
   if [[ "$n" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-(.+)$ ]]; then
@@ -418,35 +370,338 @@ clean_archived_name() {
 }
 
 # ============================================================================
-# Build a ChangeRecord
+# Phase inference (precedence-ordered)
 # ============================================================================
 
 # Args:
-#   $1 = change dir absolute path
+#   $1 = change dir
 #   $2 = kind ("active" | "exploring" | "recent")
-# Emits a JSON ChangeRecord to stdout.
+infer_phase() {
+  local dir="$1"
+  local kind="$2"
+
+  # Rule 1: under openspec/changes/archive/ → archived
+  if [[ "$kind" == "recent" ]]; then
+    echo "archived"; return
+  fi
+
+  # For exploring kind: phase is exploring unless we find evidence otherwise
+  # (we've already deduped against active changes in enumerate_explorations)
+  if [[ "$kind" == "exploring" ]]; then
+    echo "exploring"; return
+  fi
+
+  # kind == "active" — apply rules 2-4
+  # Rule 2: most recent .orbit-runs JSON command type, provided JSON is newer
+  # than tasks.md mtime (freshness condition per W2 resolution)
+  local latest; latest=$(latest_orbit_run "$dir")
+  if [[ -n "$latest" ]]; then
+    local json_epoch tasks_epoch
+    json_epoch=$(mtime_epoch "$latest" 2>/dev/null || echo 0)
+    tasks_epoch=0
+    [[ -f "$dir/tasks.md" ]] && tasks_epoch=$(mtime_epoch "$dir/tasks.md" 2>/dev/null || echo 0)
+
+    if (( json_epoch >= tasks_epoch )); then
+      local cmd; cmd=$(orbit_run_command_type "$latest")
+      case "$cmd" in
+        archive)                      echo "archived"; return ;;
+        review-*|address-reviews-*)   echo "reviewing"; return ;;
+        review|address-reviews)       echo "reviewing"; return ;;
+      esac
+    fi
+  fi
+
+  # Rule 3: tasks.md with any [x] AND any [ ] → applying
+  if [[ -f "$dir/tasks.md" ]]; then
+    local cmp unc
+    cmp=$(grep -c '^- \[x\]' "$dir/tasks.md" 2>/dev/null || true); cmp=${cmp:-0}
+    unc=$(grep -c '^- \[ \]' "$dir/tasks.md" 2>/dev/null || true); unc=${unc:-0}
+    if (( cmp > 0 && unc > 0 )); then
+      echo "applying"; return
+    fi
+  fi
+
+  # Rule 4: proposal.md exists, no [x] in tasks (or tasks.md absent) → proposed
+  if [[ -f "$dir/proposal.md" ]]; then
+    local cmp=0
+    [[ -f "$dir/tasks.md" ]] && cmp=$(grep -c '^- \[x\]' "$dir/tasks.md" 2>/dev/null || true)
+    cmp=${cmp:-0}
+    if (( cmp == 0 )); then
+      echo "proposed"; return
+    fi
+  fi
+
+  # Rule 5 only applies to exploring kind (handled above).
+  # Rule 6 (verified) reserved for /opsx:verify run-summary JSONs (future).
+  # Fallback: applying (covers all-checked tasks.md before a system review)
+  echo "applying"
+}
+
+# ============================================================================
+# Attention signal detection
+# ============================================================================
+
+# Returns a JSON array of attention entries for a change dir.
+# Closed enum: unresolved_marker, stale_review, audit_divergence.
+# task_blocked deferred to v2 (NOOP per spec).
+collect_attention() {
+  local change_dir="$1"
+  local entries='[]'
+
+  # 8.1 unresolved_marker: scan artifacts (markdown) for lines starting @review:
+  while IFS= read -r grepline; do
+    [[ -z "$grepline" ]] && continue
+    # grepline format: <file>:<lineno>:<content>
+    local file lineno text
+    file=$(echo "$grepline" | cut -d: -f1)
+    lineno=$(echo "$grepline" | cut -d: -f2)
+    text=$(echo "$grepline" | cut -d: -f3-)
+    text=$(echo "$text" | sed 's/^[[:space:]]*//')
+    local rel="${file#$change_dir/}"
+    local entry
+    entry=$(jq -nc \
+      --arg loc "$rel:$lineno" \
+      --arg text "$text" \
+      '{type: "unresolved_marker", location: $loc, text: $text}')
+    entries=$(echo "$entries" | jq -c --argjson e "$entry" '. + [$e]')
+  done < <(grep -rn '^@review:' "$change_dir" --include='*.md' 2>/dev/null || true)
+
+  # 8.2 stale_review: artifact mtime > latest review-*.json mtime
+  local latest_review
+  latest_review=$(find "$change_dir/.orbit-runs" -maxdepth 1 -type f -name 'review-*.json' 2>/dev/null | sort | tail -1 || true)
+  if [[ -n "$latest_review" ]]; then
+    local rev_epoch
+    rev_epoch=$(mtime_epoch "$latest_review" 2>/dev/null || echo 0)
+    local f
+    for f in "$change_dir/proposal.md" "$change_dir/design.md" "$change_dir/tasks.md" "$change_dir/explore.md"; do
+      [[ -f "$f" ]] || continue
+      local fe
+      fe=$(mtime_epoch "$f" 2>/dev/null || echo 0)
+      if (( fe > rev_epoch )); then
+        local rel="${f#$change_dir/}"
+        local since
+        since=$(mtime_iso "$f")
+        local entry
+        entry=$(jq -nc \
+          --arg loc "$rel" \
+          --arg since "$since" \
+          '{type: "stale_review", location: $loc, since: $since}')
+        entries=$(echo "$entries" | jq -c --argjson e "$entry" '. + [$e]')
+      fi
+    done
+    # Also walk specs/
+    if [[ -d "$change_dir/specs" ]]; then
+      while IFS= read -r f; do
+        [[ -f "$f" ]] || continue
+        local fe
+        fe=$(mtime_epoch "$f" 2>/dev/null || echo 0)
+        if (( fe > rev_epoch )); then
+          local rel="${f#$change_dir/}"
+          local since
+          since=$(mtime_iso "$f")
+          local entry
+          entry=$(jq -nc \
+            --arg loc "$rel" \
+            --arg since "$since" \
+            '{type: "stale_review", location: $loc, since: $since}')
+          entries=$(echo "$entries" | jq -c --argjson e "$entry" '. + [$e]')
+        fi
+      done < <(find "$change_dir/specs" -type f -name '*.md' 2>/dev/null)
+    fi
+  fi
+
+  # 8.3 audit_divergence: count of findings in latest audit-drift-*.json
+  # (Suppressed on plain-openspec projects per the degradation spec.)
+  if [[ "$IS_ORBIT_PROJECT" == "true" ]]; then
+    local latest_audit
+    latest_audit=$(find "$change_dir/.orbit-runs" -maxdepth 1 -type f -name 'audit-drift-*.json' 2>/dev/null | sort | tail -1 || true)
+    if [[ -n "$latest_audit" ]]; then
+      if jq -e . "$latest_audit" >/dev/null 2>&1; then
+        local count
+        count=$(jq -r '(.findings_summary.critical // 0) + (.findings_summary.warning // 0) + (.findings_summary.suggestion // 0)' "$latest_audit" 2>/dev/null || echo 0)
+        if (( count > 0 )); then
+          local rel=".orbit-runs/$(basename "$latest_audit")"
+          local entry
+          entry=$(jq -nc \
+            --arg loc "$rel" \
+            --argjson count "$count" \
+            '{type: "audit_divergence", location: $loc, count: $count}')
+          entries=$(echo "$entries" | jq -c --argjson e "$entry" '. + [$e]')
+        fi
+      else
+        echo "Warning: failed to parse JSON: $latest_audit (treating as absent)" >&2
+      fi
+    fi
+  fi
+
+  # 8.4 task_blocked: deferred to v2 (NOOP — enum slot defined in spec, no emission)
+
+  echo "$entries"
+}
+
+# ============================================================================
+# Tier-1 best-effort parse of next_recommended string
+# ============================================================================
+
+# Returns a JSON object {command, args} or null when no parseable leading
+# /opsx:<verb> token is found.
+parse_next_recommended_string() {
+  local s="$1"
+  # Strip leading whitespace
+  s="${s#"${s%%[![:space:]]*}"}"
+  # Look for /opsx:<verb> at the start, optional <args> (single token to next whitespace/period/quote)
+  if [[ "$s" =~ ^/opsx:([a-z-]+)([[:space:]]+([^[:space:]\".\']+))? ]]; then
+    local verb="${BASH_REMATCH[1]}"
+    local args="${BASH_REMATCH[3]:-}"
+    jq -nc --arg c "/opsx:$verb" --arg a "$args" '{command: $c, args: $a}'
+  else
+    echo null
+  fi
+}
+
+# ============================================================================
+# Recommendation engine (3-tier hierarchy)
+# ============================================================================
+
+# Args:
+#   $1 = change dir (empty for project-level / tier-3 fallback)
+#   $2 = attention JSON array (for marker override check)
+#   $3 = kind ("active" | "exploring" | "recent" | "" for tier-3)
+compute_recommended_next() {
+  local dir="$1"
+  local attention="$2"
+  local kind="$3"
+  local cmd="" args="" reason="" source_label=""
+
+  if [[ -z "$dir" ]]; then
+    # Tier 3 — no active or exploring threads project-wide
+    cmd="/opsx:explore"
+    args="<name>"
+    reason="No active workflow. Use /opsx:explore to start one."
+    source_label="tier-3 (project-level fallback)"
+  else
+    local name
+    name=$(basename "$dir")
+    [[ "$kind" == "recent" ]] && name=$(clean_archived_name "$name")
+
+    # Tier-1 marker override (fires before reading the JSON's recommendation)
+    local marker_count
+    marker_count=$(echo "$attention" | jq '[.[] | select(.type == "unresolved_marker")] | length')
+    if (( marker_count > 0 )); then
+      cmd="/opsx:address-reviews"
+      args="$name"
+      reason="$marker_count unresolved @review: markers in the change's artifacts; resolve before proceeding."
+      source_label="tier-1 marker override"
+    else
+      # Tier 1: read next_recommended from latest .orbit-runs JSON
+      local latest_json
+      latest_json=$(latest_orbit_run "$dir")
+      if [[ -n "$latest_json" ]]; then
+        if jq -e . "$latest_json" >/dev/null 2>&1; then
+          local nr
+          nr=$(jq -r '.next_recommended // empty' "$latest_json" 2>/dev/null || true)
+          if [[ -n "$nr" ]]; then
+            reason="$nr"
+            local parsed
+            parsed=$(parse_next_recommended_string "$nr")
+            if [[ "$parsed" != "null" ]]; then
+              cmd=$(echo "$parsed" | jq -r '.command')
+              args=$(echo "$parsed" | jq -r '.args')
+            fi
+            source_label="tier-1 (.orbit-runs/$(basename "$latest_json"))"
+          fi
+        else
+          echo "Warning: failed to parse JSON: $latest_json (treating as absent)" >&2
+        fi
+      fi
+
+      # Tier 2: synthesis ruleset (fires when no .orbit-runs/, or tier-1 produced nothing)
+      if [[ -z "$reason" ]]; then
+        # Rule 1: exploration only
+        if [[ "$kind" == "exploring" ]]; then
+          cmd="/opsx:propose"
+          args="$name"
+          reason="Exploration captured; promote to a formal change via /opsx:propose."
+          source_label="tier-2 (rule 1: explore-only)"
+        # Rule 2: proposal but no tasks.md
+        elif [[ -f "$dir/proposal.md" && ! -f "$dir/tasks.md" ]]; then
+          cmd="/opsx:propose"
+          args="$name"
+          reason="Proposal exists but tasks.md is missing; continue artifact generation."
+          source_label="tier-2 (rule 2: artifacts incomplete)"
+        elif [[ -f "$dir/tasks.md" ]]; then
+          local cmp unc
+          cmp=$(grep -c '^- \[x\]' "$dir/tasks.md" 2>/dev/null || true); cmp=${cmp:-0}
+          unc=$(grep -c '^- \[ \]' "$dir/tasks.md" 2>/dev/null || true); unc=${unc:-0}
+          local has_review=false
+          [[ -d "$dir/.orbit-runs" ]] && find "$dir/.orbit-runs" -maxdepth 1 -type f -name 'review-*.json' 2>/dev/null | grep -q . && has_review=true
+
+          # Rule 3: tasks all unchecked, no review JSON → /opsx:review
+          if (( cmp == 0 )) && ! $has_review; then
+            cmd="/opsx:review"
+            args="$name"
+            reason="All tasks unchecked; run a proposal-mode review before /opsx:apply."
+            source_label="tier-2 (rule 3: pre-review)"
+          # Rule 4: tasks with partial completion → /opsx:apply
+          elif (( cmp > 0 && unc > 0 )); then
+            cmd="/opsx:apply"
+            args="$name"
+            reason="Partial tasks; continue applying."
+            source_label="tier-2 (rule 4: in-apply)"
+          fi
+        fi
+
+        # Tier-2 fallback (shouldn't normally hit if rules are exhaustive)
+        if [[ -z "$reason" ]]; then
+          cmd="/opsx:review"
+          args="$name"
+          reason="No active orbit emissions; consider a proposal-mode review."
+          source_label="tier-2 (fallback)"
+        fi
+      fi
+    fi
+  fi
+
+  # Emit
+  if $DETAIL; then
+    jq -nc \
+      --arg c "$cmd" --arg a "$args" --arg r "$reason" --arg s "$source_label" \
+      '{command: $c, args: $a, reason: $r, source: $s}'
+  else
+    jq -nc \
+      --arg c "$cmd" --arg a "$args" --arg r "$reason" \
+      '{command: $c, args: $a, reason: $r}'
+  fi
+}
+
+# ============================================================================
+# ChangeRecord builder
+# ============================================================================
+
 build_change_record() {
   local dir="$1"
   local kind="$2"
   local name
-
   if [[ "$kind" == "recent" ]]; then
     name=$(clean_archived_name "$(basename "$dir")")
   else
     name=$(basename "$dir")
   fi
 
-  local artifacts
+  local artifacts last_touched review_history phase attention tasks
   artifacts=$(collect_artifacts_present "$dir")
-
-  local last_touched
   last_touched=$(compute_last_touched "$dir")
-
-  local review_history
   review_history=$(compute_review_history_summary "$dir")
+  phase=$(infer_phase "$dir" "$kind")
 
-  # Tasks: only meaningful if tasks.md exists; otherwise null.
-  local tasks="null"
+  # Attention: only for active + exploring (archived changes don't carry live attention)
+  if [[ "$kind" == "recent" ]]; then
+    attention='[]'
+  else
+    attention=$(collect_attention "$dir")
+  fi
+
+  tasks="null"
   if [[ -f "$dir/tasks.md" ]]; then
     tasks=$(count_tasks "$dir/tasks.md")
     if $DETAIL; then
@@ -456,44 +711,39 @@ build_change_record() {
     fi
   fi
 
+  local base
+  base=$(jq -nc \
+    --arg name "$name" \
+    --arg phase "$phase" \
+    --argjson artifacts "$artifacts" \
+    --argjson tasks "$tasks" \
+    --argjson review_history "$review_history" \
+    --argjson attention "$attention" \
+    --arg last_touched "$last_touched" \
+    '{
+      name: $name,
+      phase: $phase,
+      artifacts_present: $artifacts,
+      tasks: $tasks,
+      review_history: $review_history,
+      attention: $attention,
+      last_touched: $last_touched
+    }')
+
   if [[ "$kind" == "recent" ]]; then
     local archived_at
     archived_at=$(compute_archived_at "$dir")
-    jq -n \
-      --arg name "$name" \
-      --argjson artifacts "$artifacts" \
-      --argjson tasks "$tasks" \
-      --argjson review_history "$review_history" \
-      --arg last_touched "$last_touched" \
-      --arg archived_at "$archived_at" \
-      '{
-        name: $name,
-        artifacts_present: $artifacts,
-        tasks: $tasks,
-        review_history: $review_history,
-        last_touched: $last_touched,
-        archived_at: $archived_at
-      }'
+    echo "$base" | jq -c --arg at "$archived_at" '. + {archived_at: $at}'
   else
-    jq -n \
-      --arg name "$name" \
-      --argjson artifacts "$artifacts" \
-      --argjson tasks "$tasks" \
-      --argjson review_history "$review_history" \
-      --arg last_touched "$last_touched" \
-      '{
-        name: $name,
-        artifacts_present: $artifacts,
-        tasks: $tasks,
-        review_history: $review_history,
-        last_touched: $last_touched
-      }'
+    echo "$base"
   fi
 }
 
-# Build a JSON array of ChangeRecords for a given kind.
+# ============================================================================
+# Array builders
+# ============================================================================
+
 build_active_array() {
-  local out
   while IFS= read -r d; do
     [[ -z "$d" ]] && continue
     build_change_record "$d" active
@@ -507,7 +757,6 @@ build_exploring_array() {
   done < <(enumerate_explorations) | jq -sc .
 }
 
-# Builds recent[] array, sorted by archived_at desc, capped to LIMIT.
 build_recent_array() {
   while IFS= read -r d; do
     [[ -z "$d" ]] && continue
@@ -517,20 +766,148 @@ build_recent_array() {
 }
 
 # ============================================================================
+# Multi-change focus ranking
+# ============================================================================
+
+# Picks primary + builds secondary_threads + computes focus block.
+# Args:
+#   $1 = active array JSON
+#   $2 = exploring array JSON
+# Emits the full focus object (or tier-3 fallback) to stdout.
+compute_focus() {
+  local active_arr="$1"
+  local exploring_arr="$2"
+  local total
+  total=$(jq -n --argjson a "$active_arr" --argjson e "$exploring_arr" '($a | length) + ($e | length)')
+
+  # Tier 3: no active or exploring
+  if (( total == 0 )); then
+    local rec
+    rec=$(compute_recommended_next "" "[]" "")
+    jq -nc --argjson rec "$rec" \
+      '{summary: "No active workflow.", recommended_next: $rec}'
+    return
+  fi
+
+  # Combine + label kind on each entry
+  local combined
+  combined=$(jq -nc \
+    --argjson a "$active_arr" \
+    --argjson e "$exploring_arr" \
+    '($a | map(. + {kind: "active"})) + ($e | map(. + {kind: "exploring"}))')
+
+  # --change override
+  local primary primary_kind ranking_basis
+  if [[ -n "$CHANGE" ]]; then
+    primary=$(echo "$combined" | jq -c --arg n "$CHANGE" '[.[] | select(.name == $n)] | .[0]')
+    if [[ "$primary" == "null" ]]; then
+      local active_names exploring_names
+      active_names=$(echo "$active_arr" | jq -r '[.[].name] | join(", ")')
+      exploring_names=$(echo "$exploring_arr" | jq -r '[.[].name] | join(", ")')
+      echo "Error: --change argument '$CHANGE' doesn't name an active or exploring thread." >&2
+      [[ -n "$active_names" && "$active_names" != "" ]] && echo "  Active threads: $active_names" >&2
+      [[ -n "$exploring_names" && "$exploring_names" != "" ]] && echo "  Exploring threads: $exploring_names" >&2
+      exit 1
+    fi
+    ranking_basis="user_specified"
+  else
+    # Default ranking: last_touched DESC, name ASC on ties.
+    # Multi-key sort via composite: [-(numeric ts), name].
+    primary=$(echo "$combined" | jq -c '
+      sort_by([
+        -(.last_touched | gsub("[-T:Z]"; "") | tonumber),
+        .name
+      ]) | .[0]')
+    ranking_basis="most_recently_touched"
+  fi
+
+  primary_kind=$(echo "$primary" | jq -r '.kind')
+  local primary_name
+  primary_name=$(echo "$primary" | jq -r '.name')
+
+  # Recommended next, based on primary's change dir
+  # Reconstruct change dir from primary's kind + name
+  local primary_dir
+  if [[ "$primary_kind" == "active" ]]; then
+    primary_dir="$PROJECT_ROOT/openspec/changes/$primary_name"
+  else  # exploring
+    primary_dir="$PROJECT_ROOT/openspec/explore/$primary_name"
+  fi
+  local primary_attention
+  primary_attention=$(echo "$primary" | jq '.attention // []')
+  local rec
+  rec=$(compute_recommended_next "$primary_dir" "$primary_attention" "$primary_kind")
+
+  # Build secondary_threads
+  local secondary
+  secondary=$(echo "$combined" | jq -c --arg pn "$primary_name" '
+    sort_by([
+      -(.last_touched | gsub("[-T:Z]"; "") | tonumber),
+      .name
+    ])
+    | map(select(.name != $pn))
+    | map({
+        name: .name,
+        kind: .kind,
+        phase: .phase,
+        summary: ([
+          .phase,
+          (if (.tasks // null) != null and ((.tasks.total // 0) > 0)
+            then "\(.tasks.completed)/\(.tasks.total) tasks"
+            else empty
+          end),
+          (if ((.attention // []) | length) > 0
+            then "\((.attention | length)) attention"
+            else empty
+          end)
+        ] | join(" · "))
+      })')
+
+  # Summary line for the primary. Phase-aware: gerund phases use the
+  # "You are <phase> <name>" form; non-gerund phases use "<name> is <phase>".
+  local summary
+  if (( total == 1 )); then
+    summary=$(echo "$primary" | jq -r '
+      if .phase == "exploring" or .phase == "applying" or .phase == "reviewing"
+        then "You are \(.phase) \(.name)."
+        else "\(.name) is \(.phase)."
+      end
+    ')
+  else
+    local primary_phase
+    primary_phase=$(echo "$primary" | jq -r '.phase')
+    summary=$(printf '%d threads active. Primary: %s (%s).' "$total" "$primary_name" "$primary_phase")
+  fi
+
+  jq -nc \
+    --arg summary "$summary" \
+    --arg primary_change "$primary_name" \
+    --arg primary_change_kind "$primary_kind" \
+    --arg ranking_basis "$ranking_basis" \
+    --argjson rec "$rec" \
+    --argjson secondary "$secondary" \
+    '{
+      summary: $summary,
+      primary_change: $primary_change,
+      primary_change_kind: $primary_change_kind,
+      ranking_basis: $ranking_basis,
+      recommended_next: $rec,
+      secondary_threads: $secondary
+    }'
+}
+
+# ============================================================================
 # Emit
 # ============================================================================
 
 emit_json() {
-  local active_arr
-  active_arr=$(build_active_array)
-  local exploring_arr
-  exploring_arr=$(build_exploring_array)
-  local recent_arr
-  recent_arr=$(build_recent_array)
+  local active_arr exploring_arr recent_arr archived_total focus
 
-  # Total archived count (full, not capped by --limit)
-  local archived_total
+  active_arr=$(build_active_array)
+  exploring_arr=$(build_exploring_array)
+  recent_arr=$(build_recent_array)
   archived_total=$(enumerate_archived_changes | wc -l | tr -d ' ')
+  focus=$(compute_focus "$active_arr" "$exploring_arr")
 
   jq -n \
     --arg path "$PROJECT_ROOT" \
@@ -540,13 +917,14 @@ emit_json() {
     --argjson exploring "$exploring_arr" \
     --argjson recent "$recent_arr" \
     --argjson archived_total "$archived_total" \
+    --argjson focus "$focus" \
     '{
       project: {
         path: $path,
         name: $name,
         is_orbit_project: $is_orbit
       },
-      focus: null,
+      focus: $focus,
       active: $active,
       exploring: $exploring,
       recent: $recent,
@@ -560,59 +938,98 @@ emit_json() {
 
 emit_human() {
   local tag=""
-  if [[ "$IS_ORBIT_PROJECT" == "true" ]]; then
-    tag=" (orbit project)"
-  fi
+  [[ "$IS_ORBIT_PROJECT" == "true" ]] && tag=" (orbit project)"
   printf '%s%s\n' "$PROJECT_ROOT" "$tag"
   echo ""
-  echo "opsx-status v$VERSION — inventory + parsing"
-  echo ""
 
-  # Counts only (chunk 2 doesn't render the focus block or per-change details)
-  local active_count
-  active_count=$(enumerate_active_changes | wc -l | tr -d ' ')
-  local exploring_count
-  exploring_count=$(enumerate_explorations | wc -l | tr -d ' ')
-  local archived_count
-  archived_count=$(enumerate_archived_changes | wc -l | tr -d ' ')
+  # Compute the focus (drives both summary and primary recommendation)
+  local active_arr exploring_arr recent_arr focus
+  active_arr=$(build_active_array)
+  exploring_arr=$(build_exploring_array)
+  recent_arr=$(build_recent_array)
+  focus=$(compute_focus "$active_arr" "$exploring_arr")
 
-  if (( active_count > 0 )); then
-    echo "Active: $active_count thread$( [[ $active_count -ne 1 ]] && echo s )"
-    while IFS= read -r d; do
-      [[ -z "$d" ]] && continue
-      local n; n=$(basename "$d")
-      local rec; rec=$(build_change_record "$d" active)
-      local tot ckd
-      tot=$(echo "$rec" | jq -r '.tasks.total // 0')
-      ckd=$(echo "$rec" | jq -r '.tasks.completed // 0')
-      printf '  %s — %s/%s tasks\n' "$n" "$ckd" "$tot"
-    done < <(enumerate_active_changes)
-    echo ""
-  fi
+  local total
+  total=$(jq -n --argjson a "$active_arr" --argjson e "$exploring_arr" '($a | length) + ($e | length)')
 
-  if (( exploring_count > 0 )); then
-    echo "Exploring: $exploring_count thread$( [[ $exploring_count -ne 1 ]] && echo s )"
-    while IFS= read -r d; do
-      [[ -z "$d" ]] && continue
-      local n; n=$(basename "$d")
-      printf '  %s\n' "$n"
-    done < <(enumerate_explorations)
-    echo ""
-  fi
-
-  if (( archived_count > 0 )); then
-    echo "Recently archived: $archived_count total (showing up to $LIMIT)"
-    build_recent_array | jq -r '.[] | "  \(.name) · archived \(.archived_at | split("T")[0])"'
-    echo ""
-  fi
-
-  if (( active_count == 0 && exploring_count == 0 && archived_count == 0 )); then
+  if (( total == 0 )); then
     echo "No active workflow. Use /opsx:explore to start one."
-    echo ""
+    local archived_total
+    archived_total=$(enumerate_archived_changes | wc -l | tr -d ' ')
+    if (( archived_total > 0 )); then
+      echo ""
+      echo "Recently archived: $archived_total total (showing up to $LIMIT)"
+      echo "$recent_arr" | jq -r '.[] | "  \(.name) · archived \(.archived_at | split("T")[0])"'
+    fi
+    return
   fi
 
-  echo "(Phase inference, attention signals, focus/recommendation"
-  echo " — land in chunk 3 of bootstrap-orbit-status-cli.)"
+  # Surface the focus summary + recommendation
+  local summary primary_name primary_kind
+  summary=$(echo "$focus" | jq -r '.summary')
+  primary_name=$(echo "$focus" | jq -r '.primary_change')
+  primary_kind=$(echo "$focus" | jq -r '.primary_change_kind')
+
+  echo "$summary"
+
+  # Primary thread one-liner
+  local primary_record
+  if [[ "$primary_kind" == "active" ]]; then
+    primary_record=$(echo "$active_arr" | jq -c --arg n "$primary_name" '.[] | select(.name == $n)')
+  else
+    primary_record=$(echo "$exploring_arr" | jq -c --arg n "$primary_name" '.[] | select(.name == $n)')
+  fi
+  if [[ -n "$primary_record" && "$primary_record" != "null" ]]; then
+    local pphase ptasks pattn
+    pphase=$(echo "$primary_record" | jq -r '.phase')
+    ptasks=$(echo "$primary_record" | jq -r 'if (.tasks // null) != null and (.tasks.total // 0) > 0 then "\(.tasks.completed)/\(.tasks.total) tasks" else "" end')
+    pattn=$(echo "$primary_record" | jq -r 'if ((.attention // []) | length) > 0 then "\(.attention | length) attention" else "" end')
+    # Compose ' · '-separated state segments (bash IFS join is multi-char-unsafe;
+    # build the string explicitly instead).
+    local primary_line=""
+    if [[ -n "$ptasks" ]]; then
+      primary_line="$ptasks"
+    fi
+    if [[ -n "$pattn" ]]; then
+      if [[ -n "$primary_line" ]]; then
+        primary_line="$primary_line · $pattn"
+      else
+        primary_line="$pattn"
+      fi
+    fi
+    [[ -n "$primary_line" ]] && printf '  %s\n' "$primary_line"
+  fi
+
+  # Recommended next
+  echo ""
+  local rec_cmd rec_args rec_reason
+  rec_cmd=$(echo "$focus" | jq -r '.recommended_next.command')
+  rec_args=$(echo "$focus" | jq -r '.recommended_next.args')
+  rec_reason=$(echo "$focus" | jq -r '.recommended_next.reason')
+  if [[ -n "$rec_args" && "$rec_args" != "null" && "$rec_args" != "" ]]; then
+    echo "Next: $rec_cmd $rec_args"
+  else
+    echo "Next: $rec_cmd"
+  fi
+  echo "  \"$rec_reason\""
+
+  # Secondary threads
+  local sec_count
+  sec_count=$(echo "$focus" | jq -r '(.secondary_threads // []) | length')
+  if (( sec_count > 0 )); then
+    echo ""
+    echo "Other active:"
+    echo "$focus" | jq -r '.secondary_threads[] | "  \(.name)    \(.summary)"'
+  fi
+
+  # Recent archives
+  local archived_total
+  archived_total=$(enumerate_archived_changes | wc -l | tr -d ' ')
+  if (( archived_total > 0 )); then
+    echo ""
+    echo "Recently archived: $archived_total total (showing up to $LIMIT)"
+    echo "$recent_arr" | jq -r '.[] | "  \(.name) · archived \(.archived_at | split("T")[0])"'
+  fi
 }
 
 if $JSON; then

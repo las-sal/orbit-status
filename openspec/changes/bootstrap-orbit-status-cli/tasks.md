@@ -50,35 +50,35 @@ The 18 task groups below break naturally into 5 implementation chunks. `/opsx:ap
 
 ## 7. Phase inference
 
-- [ ] 7.1 Implement precedence rule 1: under `openspec/changes/archive/` → `archived`
-- [ ] 7.2 Implement rule 2: most recent `.orbit-runs/*.json` command type → `reviewing` (review/address-reviews) or `archived` (archive), **provided the JSON's filename timestamp is newer than `tasks.md` mtime**; if not, fall through to rule 3
-- [ ] 7.3 Implement rule 3: `tasks.md` with partial completion (some `[x]`, some `[ ]`) → `applying`
-- [ ] 7.4 Implement rule 4: `proposal.md` exists, no completed tasks → `proposed`
-- [ ] 7.5 Implement rule 5: only `explore.md` exists in `openspec/explore/<name>/` → `exploring`
+- [x] 7.1 Implement precedence rule 1: under `openspec/changes/archive/` → `archived`
+- [x] 7.2 Implement rule 2: most recent `.orbit-runs/*.json` command type → `reviewing` (review/address-reviews) or `archived` (archive), **provided the JSON's filename timestamp is newer than `tasks.md` mtime**; if not, fall through to rule 3
+- [x] 7.3 Implement rule 3: `tasks.md` with partial completion (some `[x]`, some `[ ]`) → `applying`
+- [x] 7.4 Implement rule 4: `proposal.md` exists, no completed tasks → `proposed`
+- [x] 7.5 Implement rule 5: only `explore.md` exists in `openspec/explore/<name>/` → `exploring`
 
 ## 8. Attention signal detection
 
-- [ ] 8.1 Scan artifacts for `@review:` markers; emit `unresolved_marker` entries with `location` and `text`
-- [ ] 8.2 Compare artifact mtimes against the latest review JSON mtime; emit `stale_review` entries with `location` and `since`
-- [ ] 8.3 Parse `.orbit-runs/audit-drift-*.json` for unresolved findings; emit `audit_divergence` entries with `location` and `count`
-- [ ] 8.4 (Deferred to v2 — no `task_blocked` convention exists upstream yet; leave the enum slot defined in spec but emit nothing)
+- [x] 8.1 Scan artifacts for `@review:` markers; emit `unresolved_marker` entries with `location` and `text`
+- [x] 8.2 Compare artifact mtimes against the latest review JSON mtime; emit `stale_review` entries with `location` and `since`
+- [x] 8.3 Parse `.orbit-runs/audit-drift-*.json` for unresolved findings; emit `audit_divergence` entries with `location` and `count`
+- [x] 8.4 (Deferred to v2 — no `task_blocked` convention exists upstream yet; leave the enum slot defined in spec but emit nothing) — code comment in `collect_attention()` documents the NOOP per spec
 
 ## 9. Recommendation engine
 
-- [ ] 9.1 Tier 1: surface `next_recommended` from most recent change JSON; preserve full string verbatim in `reason`; best-effort parse for leading `/opsx:<verb> [args]` token to populate `command`/`args` (null on failure)
-- [ ] 9.1a Tier 1 marker override: when unresolved `@review:` markers exist in the change's artifacts (i.e., `attention[]` contains `unresolved_marker` entries), override the JSON's recommendation to `{ command: "/opsx:address-reviews", args: "<change-name>", reason: "<N> unresolved @review: markers..." }`
-- [ ] 9.2 Tier 2: implement synthesis ruleset (4 precedence-ordered rules from spec; the 5th marker-handling rule was moved to tier 1's override per the iter-2 address-reviews resolution)
-- [ ] 9.3 Tier 3: project-level fallback `"No active workflow. Use /opsx:explore to start one."`
-- [ ] 9.4 Assemble `recommended_next` object: `command`, `args`, `reason`
-- [ ] 9.5 With `--detail`, add `source` field (tier 1 JSON path or tier 2 rule name)
+- [x] 9.1 Tier 1: surface `next_recommended` from most recent change JSON; preserve full string verbatim in `reason`; best-effort parse for leading `/opsx:<verb> [args]` token to populate `command`/`args` (null on failure)
+- [x] 9.1a Tier 1 marker override: when unresolved `@review:` markers exist in the change's artifacts (i.e., `attention[]` contains `unresolved_marker` entries), override the JSON's recommendation to `{ command: "/opsx:address-reviews", args: "<change-name>", reason: "<N> unresolved @review: markers..." }`
+- [x] 9.2 Tier 2: implement synthesis ruleset (4 precedence-ordered rules from spec; the 5th marker-handling rule was moved to tier 1's override per the iter-2 address-reviews resolution)
+- [x] 9.3 Tier 3: project-level fallback `"No active workflow. Use /opsx:explore to start one."`
+- [x] 9.4 Assemble `recommended_next` object: `command`, `args`, `reason`
+- [x] 9.5 With `--detail`, add `source` field (tier 1 JSON path or tier 2 rule name)
 
 ## 10. Multi-change focus ranking
 
-- [ ] 10.1 Rank active + exploring threads by `last_touched` mtime descending; on equal mtimes, tie-break by lexicographic order of change name (ascending) for full determinism
-- [ ] 10.2 Pick `primary_change` from the top of the ranking; set `primary_change_kind` to `"active"` or `"exploring"`
-- [ ] 10.3 Build `secondary_threads[]` with `name`, `kind`, `phase`, `summary` for each non-primary thread
-- [ ] 10.4 Honor `--change <name>`: override `primary_change`; set `ranking_basis` to `"user_specified"`
-- [ ] 10.5 Validate `--change` argument names an existing thread; exit non-zero with stderr error if not
+- [x] 10.1 Rank active + exploring threads by `last_touched` mtime descending; on equal mtimes, tie-break by lexicographic order of change name (ascending) for full determinism
+- [x] 10.2 Pick `primary_change` from the top of the ranking; set `primary_change_kind` to `"active"` or `"exploring"`
+- [x] 10.3 Build `secondary_threads[]` with `name`, `kind`, `phase`, `summary` for each non-primary thread
+- [x] 10.4 Honor `--change <name>`: override `primary_change`; set `ranking_basis` to `"user_specified"`
+- [x] 10.5 Validate `--change` argument names an existing thread; exit non-zero with stderr error if not
 
 ## 11. JSON output (`--json`)
 
