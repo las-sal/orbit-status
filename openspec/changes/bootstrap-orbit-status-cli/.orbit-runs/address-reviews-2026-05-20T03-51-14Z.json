@@ -1,0 +1,94 @@
+{
+  "command": "address-reviews",
+  "timestamp": "2026-05-20T03:51:14Z",
+  "change": "bootstrap-orbit-status-cli",
+  "iteration": 1,
+  "source": "inline_markers",
+  "source_note": "Markers placed by /opsx:review --mark iter-2 at 2026-05-20T02:57:02Z. No --from-file ingest; inline scan only.",
+  "executed_by": "claude in-session",
+  "input_findings_summary": {
+    "discovered": 6,
+    "walked": 6,
+    "subset_specified": false
+  },
+  "pushback_verification": "All 6 markers verified against current state of spec artifacts (touched within minutes of review). No stale findings; 0 suppressed.",
+  "resolution_summary": {
+    "resolved": 6,
+    "stale": 0,
+    "deferred": 0,
+    "escalated": 0
+  },
+  "resolutions": [
+    {
+      "marker": "specs/orbit-status-phase-model/spec.md:5",
+      "title": "Edge case unspecified — both explore.md AND changes/<name>/ exist (mid-promotion state)",
+      "classification": "trivial_fix",
+      "action": "Added change-directory-precedence preamble to the \"Phase inference uses precedence ordering\" requirement; added explicit \"Mid-promotion\" scenario.",
+      "ripple_flagged": ["design.md"],
+      "marker_removed": true
+    },
+    {
+      "marker": "specs/orbit-status-phase-model/spec.md:17",
+      "title": "\"most recent JSON\" ambiguous — by which timestamp?",
+      "classification": "trivial_fix",
+      "action": "Updated rule 2 to specify \"ordered by the ISO-8601 timestamp embedded in each filename, descending\" with example.",
+      "ripple_flagged": ["design.md"],
+      "marker_removed": true
+    },
+    {
+      "marker": "specs/orbit-status-output/spec.md:5",
+      "title": "\"one-screen\" not defined; could split implementations",
+      "classification": "decision_required",
+      "action": "Applied user decision: Soft target — \"designed to fit approximately 24 terminal lines for typical projects; MAY exceed when many threads are active; MUST NOT truncate output to enforce a hard line limit.\"",
+      "user_decision": "soft_target",
+      "ripple_flagged": ["design.md"],
+      "marker_removed": true
+    },
+    {
+      "marker": "specs/orbit-status-output/spec.md:6",
+      "title": "Error paths not specified (missing openspec/, jq, corrupted .orbit-runs JSON)",
+      "classification": "decision_required",
+      "action": "Applied user decision: New Requirement in orbit-status-output spec — \"Error handling\" with 3 scenarios (openspec/ not found, jq missing, malformed JSON in .orbit-runs/).",
+      "user_decision": "new_requirement",
+      "ripple_flagged": ["tasks.md (verify task 2.4 + 2.5 cover the openspec/ and jq scenarios)", "design.md"],
+      "marker_removed": true
+    },
+    {
+      "marker": "specs/orbit-status-output/spec.md:62",
+      "title": "--limit N: behavior with N=0 or negative N unspecified",
+      "classification": "trivial_fix",
+      "action": "Added \"N MUST be a non-negative integer\" to the requirement; added 2 scenarios (--limit 0 → empty recent[]; --limit -1 → non-zero exit + stderr).",
+      "ripple_flagged": [],
+      "marker_removed": true
+    },
+    {
+      "marker": "specs/orbit-status-recommendation/spec.md:23",
+      "title": "Tier-2 rule 4 — \"task edit\" definition ambiguous",
+      "classification": "trivial_fix",
+      "action": "Updated rule 4 to read: \"no review JSON newer than the most recent `tasks.md` mtime (file modification time)\".",
+      "ripple_flagged": ["design.md"],
+      "marker_removed": true
+    }
+  ],
+  "ripple_flagged_files_aggregate": [
+    "design.md — touched by 4 resolutions; verify the Decisions section still reflects current spec language (\"one-screen\" soft target; Tier-2 rule 4 mtime definition; precedence preamble; new Error handling requirement)",
+    "tasks.md — task 2.4 (locate project root) and 2.5 (verify jq) align with the new Error handling requirement, but no new tasks were added for the malformed-JSON warning behavior; consider adding a task for the JSON-skip-on-parse-failure logic"
+  ],
+  "post_resolution_state": {
+    "remaining_markers_in_scope": 0,
+    "escalated_markers_persisted": 0,
+    "validate_passes": true,
+    "requirement_count_change": {
+      "before": 16,
+      "after": 17,
+      "delta": "+1 (Error handling requirement added to orbit-status-output)"
+    },
+    "scenario_count_change": {
+      "before": 34,
+      "after": 40,
+      "delta": "+6 (mid-promotion, --limit 0, --limit negative, 3 error-handling scenarios)"
+    }
+  },
+  "final_assessment": "0 unresolved inline markers remaining in scope. 0 escalated. All 6 markers walked and resolved (4 trivial, 2 decision-applied). openspec validate passes.",
+  "next_recommended": "Re-run /opsx:review bootstrap-orbit-status-cli to confirm clean baseline (expect: 0 critical, 0 warnings; 3 suggestions may remain or be resolved against the refreshed artifacts). Or proceed to /opsx:apply bootstrap-orbit-status-cli to start implementation."
+}

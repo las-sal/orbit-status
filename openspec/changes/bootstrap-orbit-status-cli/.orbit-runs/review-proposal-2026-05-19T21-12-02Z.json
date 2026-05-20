@@ -1,0 +1,121 @@
+{
+  "command": "review",
+  "timestamp": "2026-05-19T21:12:02Z",
+  "change": "bootstrap-orbit-status-cli",
+  "mode": "proposal",
+  "iteration": 1,
+  "depth": "full",
+  "flags": {
+    "parallel": false,
+    "focus": null,
+    "strict": false,
+    "fresh": false,
+    "mark": false,
+    "skip_verify": false
+  },
+  "passes_run": ["1", "2", "3", "5", "6", "7", "8", "9"],
+  "passes_skipped": ["4"],
+  "passes_skipped_reasons": {
+    "4": "no openspec/specs/ baseline (greenfield change); no archived requirements to check against"
+  },
+  "findings_summary": {
+    "critical": 0,
+    "warning": 6,
+    "suggestion": 4,
+    "by_pass": {
+      "1": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "2": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "3": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "5": { "critical": 0, "warning": 4, "suggestion": 1 },
+      "6": { "critical": 0, "warning": 2, "suggestion": 1 },
+      "7": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "8": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "9": { "critical": 0, "warning": 0, "suggestion": 2 }
+    }
+  },
+  "findings": [
+    {
+      "pass": "5",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-output/spec.md",
+      "line": 7,
+      "title": "\"one-screen\" not defined; could split implementations",
+      "recommendation": "Either define \"one-screen\" (e.g., \"≤24 visible lines on an 80×24 terminal\") or explicitly mark it approximate (\"no hard line limit; default view fits a typical terminal\"). As written, two implementers could produce notably different default views."
+    },
+    {
+      "pass": "5",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-output/spec.md",
+      "line": 67,
+      "title": "--limit N: behavior with N=0 or negative N unspecified",
+      "recommendation": "Add a scenario covering the edge cases (e.g., \"WHEN --limit 0 THEN recent[] is empty\"; \"WHEN --limit -1 THEN orbit-status exits non-zero with an error\")."
+    },
+    {
+      "pass": "5",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-phase-model/spec.md",
+      "line": 23,
+      "title": "\"most recent JSON\" ambiguous — by which timestamp?",
+      "recommendation": "Specify the source explicitly. Recommend: \"by the ISO-8601 timestamp embedded in the filename (e.g., review-proposal-2026-05-18T01-47-44Z.json), descending.\" This matches the bootstrap-openspec-orbit precedent and avoids mtime-vs-content-ts ambiguity."
+    },
+    {
+      "pass": "5",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-recommendation/spec.md",
+      "line": 27,
+      "title": "Tier-2 rule 4 — \"task edit\" definition ambiguous (file mtime vs git commit?)",
+      "recommendation": "Define explicitly. Recommend: \"the most recent mtime of tasks.md\". This is the simplest deterministic source and matches the rest of the spec's filesystem-based signals."
+    },
+    {
+      "pass": "6",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-phase-model/spec.md",
+      "line": 7,
+      "title": "Edge case unspecified: both explore.md AND changes/<name>/ exist (mid-promotion state)",
+      "recommendation": "Add an explicit precedence rule at the top of the inference list: \"If openspec/changes/<name>/ exists, ignore openspec/explore/<name>/ for that name (changes/ wins).\" Otherwise phase inference falls through to rule 5 (exploring) when changes/ has artifacts."
+    },
+    {
+      "pass": "6",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-output/spec.md",
+      "line": 7,
+      "title": "Error paths not specified (missing openspec/, missing jq, corrupted .orbit-runs JSON)",
+      "recommendation": "Add a small \"error handling\" requirement to orbit-status-output spec covering: openspec/ not found in cwd or ancestors → non-zero exit + stderr; jq missing (already covered by task 2.5) → non-zero exit + stderr; malformed JSON in .orbit-runs/ → log warning to stderr and skip that file rather than failing the whole run."
+    },
+    {
+      "pass": "5",
+      "severity": "SUGGESTION",
+      "file": "specs/orbit-status-recommendation/spec.md",
+      "line": 56,
+      "title": "Multi-change tie-break on equal last_touched mtimes unspecified",
+      "recommendation": "Add a parenthetical: \"on tie, lexicographic order of change name.\" Edge case but worth nailing down for determinism."
+    },
+    {
+      "pass": "6",
+      "severity": "SUGGESTION",
+      "file": "specs/orbit-status-phase-model/spec.md",
+      "line": 56,
+      "title": "next_unchecked extraction logic underspecified for malformed tasks.md lines",
+      "recommendation": "Note in design.md (or add a brief requirement) that next_unchecked is the description of the first line matching the regex `^- \\[ \\] [0-9]+\\.[0-9]+ (.+)$`; malformed lines are skipped."
+    },
+    {
+      "pass": "9",
+      "severity": "SUGGESTION",
+      "file": "tasks.md",
+      "line": 1,
+      "title": "76 tasks across 18 groups — consider chunking note for apply",
+      "recommendation": "Add a brief preamble to tasks.md (or design.md) suggesting which task groups form logical apply chunks (e.g., groups 1–3 = skill scaffolding + project detection; 4–8 = data layer; 9–13 = recommendation + output + degradation; 14–17 = surface integration + docs; 18 = manual validation). Lets /opsx:apply pause at chunk boundaries for review."
+    },
+    {
+      "pass": "9",
+      "severity": "SUGGESTION",
+      "file": "design.md",
+      "line": 121,
+      "title": "design.md \"Open Questions\" still has 3 unresolved items at proposal time",
+      "recommendation": "Decide whether to resolve before /opsx:apply or accept as deferred. The three items (jq portability cliff, stale_review mtime granularity, --all flag) all have reasonable defaults; consider locking them in design now or explicitly noting they're deferred-to-apply."
+    }
+  ],
+  "stale_suppressed": [],
+  "final_assessment": "No critical issues. 6 warning(s) to consider. Ready to apply (with noted improvements).",
+  "iteration_note": null
+}

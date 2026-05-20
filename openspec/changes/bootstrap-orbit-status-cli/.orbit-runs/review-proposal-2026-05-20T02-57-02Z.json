@@ -1,0 +1,131 @@
+{
+  "command": "review",
+  "timestamp": "2026-05-20T02:57:02Z",
+  "change": "bootstrap-orbit-status-cli",
+  "mode": "proposal",
+  "iteration": 2,
+  "depth": "full",
+  "flags": {
+    "parallel": false,
+    "focus": null,
+    "strict": false,
+    "fresh": false,
+    "mark": true,
+    "skip_verify": false
+  },
+  "passes_run": ["1", "2", "3", "5", "6", "7", "8", "9"],
+  "passes_skipped": ["4"],
+  "passes_skipped_reasons": {
+    "4": "no openspec/specs/ baseline (greenfield change); no archived requirements to check against"
+  },
+  "findings_summary": {
+    "critical": 0,
+    "warning": 6,
+    "suggestion": 4,
+    "by_pass": {
+      "1": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "2": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "3": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "5": { "critical": 0, "warning": 4, "suggestion": 1 },
+      "6": { "critical": 0, "warning": 2, "suggestion": 1 },
+      "7": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "8": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "9": { "critical": 0, "warning": 0, "suggestion": 2 }
+    }
+  },
+  "findings": [
+    {
+      "pass": "5",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-output/spec.md",
+      "line": 5,
+      "title": "\"one-screen\" not defined; could split implementations",
+      "recommendation": "Define \"one-screen\" (e.g., \"≤24 visible lines on an 80×24 terminal\") or explicitly mark it approximate.",
+      "marker_written": true
+    },
+    {
+      "pass": "5",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-output/spec.md",
+      "line": 62,
+      "title": "--limit N: behavior with N=0 or negative N unspecified",
+      "recommendation": "Add edge-case scenarios (N=0 → empty recent[]; N<0 → non-zero exit).",
+      "marker_written": true
+    },
+    {
+      "pass": "5",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-phase-model/spec.md",
+      "line": 17,
+      "title": "\"most recent JSON\" ambiguous — by which timestamp?",
+      "recommendation": "Specify timestamp source as ISO-8601 embedded in filename, descending.",
+      "marker_written": true
+    },
+    {
+      "pass": "5",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-recommendation/spec.md",
+      "line": 23,
+      "title": "Tier-2 rule 4 — \"task edit\" definition ambiguous (file mtime vs git commit?)",
+      "recommendation": "Define as most recent mtime of tasks.md.",
+      "marker_written": true
+    },
+    {
+      "pass": "6",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-phase-model/spec.md",
+      "line": 5,
+      "title": "Edge case unspecified: both explore.md AND changes/<name>/ exist (mid-promotion state)",
+      "recommendation": "Add explicit precedence rule: changes/<name>/ wins if both exist.",
+      "marker_written": true
+    },
+    {
+      "pass": "6",
+      "severity": "WARNING",
+      "file": "specs/orbit-status-output/spec.md",
+      "line": 6,
+      "title": "Error paths not specified (missing openspec/, missing jq, corrupted .orbit-runs JSON)",
+      "recommendation": "Add small error-handling requirement covering openspec/ not found, jq missing, malformed JSON.",
+      "marker_written": true
+    },
+    {
+      "pass": "5",
+      "severity": "SUGGESTION",
+      "file": "specs/orbit-status-recommendation/spec.md",
+      "line": 56,
+      "title": "Multi-change tie-break on equal last_touched mtimes unspecified",
+      "recommendation": "Add parenthetical: on tie, lexicographic order of change name.",
+      "marker_written": false
+    },
+    {
+      "pass": "6",
+      "severity": "SUGGESTION",
+      "file": "specs/orbit-status-phase-model/spec.md",
+      "line": 56,
+      "title": "next_unchecked extraction logic underspecified for malformed tasks.md lines",
+      "recommendation": "Note: first line matching regex `^- \\[ \\] [0-9]+\\.[0-9]+ (.+)$`; malformed lines skipped.",
+      "marker_written": false
+    },
+    {
+      "pass": "9",
+      "severity": "SUGGESTION",
+      "file": "tasks.md",
+      "line": 1,
+      "title": "76 tasks across 18 groups — consider chunking note for apply",
+      "recommendation": "Add preamble suggesting logical apply chunks.",
+      "marker_written": false
+    },
+    {
+      "pass": "9",
+      "severity": "SUGGESTION",
+      "file": "design.md",
+      "line": 121,
+      "title": "design.md \"Open Questions\" still has 3 unresolved items at proposal time",
+      "recommendation": "Decide whether to resolve before /opsx:apply or accept as deferred.",
+      "marker_written": false
+    }
+  ],
+  "stale_suppressed": [],
+  "final_assessment": "No critical issues. 6 warning(s) to consider. Ready to apply (with noted improvements).",
+  "iteration_note": "10 of these findings appeared in the previous run on 2026-05-19. 0 new this run. Pushback verified all 10 against current state — none stale. --mark wrote markers for the 6 WARNINGs across 3 spec files; the 4 SUGGESTIONs are skipped per default policy."
+}
