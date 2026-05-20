@@ -64,7 +64,28 @@ Three tiers, first applicable wins:
 
 ## Interpretation guidance for the slash command
 
-(Documented in chunk-5 tasks 14.x / 15.3. The slash command's `/opsx:status` body shells out to `opsx-status --json` and elaborates the recommendation in conversational chat — surfacing `focus.recommended_next`, expanding `attention[]` entries by type, and offering to take the next action.)
+The `/opsx:status` slash command shells out to `opsx-status --json` and elaborates the result conversationally. The full interpretation rules live in `.claude/commands/opsx/status.md`. Key principles:
+
+**Surface orbit's voice, don't paraphrase.** `focus.recommended_next.reason` is orbit's own recommendation (tier 1 reads it from the latest `.orbit-runs/*.json`'s `next_recommended` field; tier 2 synthesizes from artifact presence; tier 3 is the empty-project fallback). Quote `reason` verbatim. Show `command` + `args` when populated. Mention `source` under `--detail` so the user can see which tier/JSON/rule drove the recommendation.
+
+**Attention type-aware rendering:**
+
+| Type | Suggested follow-up |
+|---|---|
+| `unresolved_marker` | `/opsx:address-reviews <name>` — markers signal review-cycle work isn't done |
+| `stale_review` | Fresh `/opsx:review` — artifacts moved since the last review |
+| `audit_divergence` | `/opsx:audit-drift` — orbit detected drift in captured knowledge |
+| `task_blocked` | Deferred to v2 (NOOP in v1) |
+
+**Workflow inflection-point pattern (per orbit issue `#15`):** end responses with a menu of legitimate next-step options at the current cycle position, not a single suggested action. The recommendation lights up the default; alternatives are honest about what else is reasonable.
+
+**Don't auto-invoke (per orbit issue `#7`):** surface the recommendation; let the user type the command. The slash command's job is interpretation and orientation, not execution.
+
+**Plain-openspec degradation:** when `project.is_orbit_project` is `false`, `review_history` and `recommended_next.source` are omitted from the JSON. Don't reach for those fields; don't reference orbit-specific concepts (iteration counts, tier semantics) in the chat output.
+
+## Implementation status
+
+v0.1 — initial implementation of `bootstrap-orbit-status-cli` change. All four capabilities (`orbit-status-output`, `orbit-status-phase-model`, `orbit-status-recommendation`, `orbit-status-distribution`) implemented; see `openspec/changes/bootstrap-orbit-status-cli/` for the canonical specs, design rationale, and task progress. Binary at `bin/opsx-status` is ~830 lines of bash with `jq` for JSON.
 
 ## Status
 

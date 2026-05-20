@@ -481,7 +481,11 @@ infer_phase() {
     tasks_epoch=0
     [[ -f "$dir/tasks.md" ]] && tasks_epoch=$(mtime_epoch "$dir/tasks.md" 2>/dev/null || echo 0)
 
-    if (( json_epoch >= tasks_epoch )); then
+    # Strict > per spec ("newer than tasks.md mtime"). Equal mtimes mean
+    # tasks.md was just touched at the same second as the review JSON; treat
+    # that as tasks-wins so a fresh edit to tasks doesn't get stuck under a
+    # stale-by-the-second review JSON.
+    if (( json_epoch > tasks_epoch )); then
       local cmd; cmd=$(orbit_run_command_type "$latest")
       case "$cmd" in
         archive)                      echo "archived"; return ;;

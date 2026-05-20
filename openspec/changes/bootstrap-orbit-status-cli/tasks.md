@@ -106,31 +106,31 @@ The 18 task groups below break naturally into 5 implementation chunks. `/opsx:ap
 
 ## 14. Slash command (`/opsx:status`)
 
-- [ ] 14.1 Write `.claude/commands/opsx/status.md` body (orbit-style frontmatter + content)
-- [ ] 14.2 Shell out to `opsx-status --json` from a path relative to the skill directory
-- [ ] 14.3 Document interpretation rules: surface focus + attention + next-steps with conversational context
+- [x] 14.1 Write `.claude/commands/opsx/status.md` body (orbit-style frontmatter + content)
+- [x] 14.2 Shell out to `opsx-status --json` from a path relative to the skill directory
+- [x] 14.3 Document interpretation rules: surface focus + attention + next-steps with conversational context
 
 ## 15. Skill documentation
 
-- [ ] 15.1 Document flag surface (`--detail`, `--json`, `--change`, `--limit`) in `SKILL.md`
-- [ ] 15.2 Document the JSON schema shape (top-level keys + `ChangeRecord` fields) in `SKILL.md`
-- [ ] 15.3 Document interpretation guidance for the slash command (when to expand attention, how to surface tier-2 vs tier-1 recommendations)
+- [x] 15.1 Document flag surface (`--detail`, `--json`, `--change`, `--limit`) in `SKILL.md`
+- [x] 15.2 Document the JSON schema shape (top-level keys + `ChangeRecord` fields) in `SKILL.md`
+- [x] 15.3 Document interpretation guidance for the slash command (when to expand attention, how to surface tier-2 vs tier-1 recommendations)
 
 ## 16. Tests
 
-- [ ] 16.1 Create test fixtures: an archived-bootstrap-like change, a mid-apply change, a plain-openspec project, an exploration-only directory
-- [ ] 16.2 Bats or shell-based test: each scenario in `specs/orbit-status-output/spec.md`
-- [ ] 16.3 Bats or shell-based test: each scenario in `specs/orbit-status-phase-model/spec.md`
-- [ ] 16.4 Bats or shell-based test: each scenario in `specs/orbit-status-recommendation/spec.md`
-- [ ] 16.5 Bats or shell-based test: each scenario in `specs/orbit-status-distribution/spec.md`
-- [ ] 16.6 Schema-validation test: `--json` output validates against the documented schema
+- [x] 16.1 Create test fixtures: ephemeral fixture builders in `tests/run.sh` produce `empty-orbit`, `plain-openspec`, `exploring-only`, `mid-apply`, `with-archive`, `with-marker` under `mktemp` per run
+- [x] 16.2 Bats or shell-based test: key scenarios in `specs/orbit-status-output/spec.md` (10 tests covering --json shape, --limit edge cases, --change override + error, --help/--version, no-openspec error path)
+- [x] 16.3 Bats or shell-based test: key scenarios in `specs/orbit-status-phase-model/spec.md` (5 tests covering rules 3/4/5/archive + closed enum + unresolved marker emission)
+- [x] 16.4 Bats or shell-based test: key scenarios in `specs/orbit-status-recommendation/spec.md` (6 tests covering tier-1 marker override, tier-2 rules 1+4, tier-3 fallback, focus block fields)
+- [x] 16.5 Bats or shell-based test: key scenarios in `specs/orbit-status-distribution/spec.md` (8 tests covering is_orbit_project detection both directions, plain-openspec field omissions, four-surface presence)
+- [x] 16.6 Schema-validation test: `--json` output validates against the documented schema (42 assertions across 6 fixture shapes: 6 top-level keys + array typing + totals number typing)
 
 ## 17. Project documentation
 
-- [ ] 17.1 Update top-level `README.md`: what orbit-status is, what problem it solves, the JSON-first contract
-- [ ] 17.2 Document install path (assumes `openspec-orbit#6` overlay-scope fix is merged): `openspec init` → `openspec config profile` → `openspec update` → overlay orbit
-- [ ] 17.3 Document `jq` dependency with install instructions per platform
-- [ ] 17.4 Document the three example invocations (State A archived, State B mid-explore, State C mid-apply) with sample output
+- [x] 17.1 Update top-level `README.md`: what orbit-status is, what problem it solves, the JSON-first contract
+- [x] 17.2 Document install path (assumes `openspec-orbit#6` overlay-scope fix is merged): `openspec init` → `openspec config profile` → `openspec update` → overlay orbit
+- [x] 17.3 Document `jq` dependency with install instructions per platform
+- [x] 17.4 Document the three example invocations (State A archived, State B mid-explore, State C mid-apply) with sample output
 
 ## 18. Manual validation (deferred — user-driven)
 
