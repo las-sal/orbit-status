@@ -85,7 +85,7 @@ The `/opsx:status` slash command shells out to `opsx-status --json` and elaborat
 
 ## Implementation status
 
-v0.1 — initial implementation of `bootstrap-orbit-status-cli` change. All four capabilities (`orbit-status-output`, `orbit-status-phase-model`, `orbit-status-recommendation`, `orbit-status-distribution`) implemented; see `openspec/changes/bootstrap-orbit-status-cli/` for the canonical specs, design rationale, and task progress. Binary at `bin/opsx-status` is ~830 lines of bash with `jq` for JSON.
+v0.1 — initial implementation of `bootstrap-orbit-status-cli` change. All four capabilities (`orbit-status-output`, `orbit-status-phase-model`, `orbit-status-recommendation`, `orbit-status-distribution`) implemented; see `openspec/changes/bootstrap-orbit-status-cli/` for the canonical specs, design rationale, and task progress. Binary at `bin/opsx-status` is ~1186 lines of bash with `jq` for JSON (exceeded the initial ~200-line target; see design.md for the size-growth rationale — primarily the attention engine, 3-tier recommendation, and multi-change focus ranking).
 
 ## Status
 

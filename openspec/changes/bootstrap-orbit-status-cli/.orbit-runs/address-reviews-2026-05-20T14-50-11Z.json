@@ -1,0 +1,87 @@
+{
+  "command": "address-reviews",
+  "timestamp": "2026-05-20T14:50:11Z",
+  "change": "bootstrap-orbit-status-cli",
+  "iteration": 3,
+  "source": "internal_review_manual_walk",
+  "source_path": "openspec/changes/bootstrap-orbit-status-cli/.orbit-runs/review-system-2026-05-20T14-43-09Z.json",
+  "source_note": "Manual walk of the iter-1 system-mode review findings. /opsx:address-reviews can't ingest internal review JSONs yet (blocked on orbit#10); this run executes the same lifecycle inline and persists the resolution log in the same shape /opsx:address-reviews would write.",
+  "external_reviewer": null,
+  "executed_by": "claude in-session, walk mode (per-finding decision on W1; trivial fix applied for W2; S1-S3 noted as informational/no-action)",
+  "input_findings_summary": {
+    "critical": 0,
+    "warning": 2,
+    "suggestion": 3,
+    "discovered": 5,
+    "walked": 5,
+    "subset_specified": false
+  },
+  "pushback_verification": "All 5 findings verified against current state at the moment of this walk. The iter-1 system review was emitted minutes before this address-reviews run; no artifacts changed in between. No stale findings suppressed.",
+  "resolution_summary": {
+    "resolved": 2,
+    "stale": 0,
+    "deferred": 0,
+    "escalated": 0,
+    "informational_no_action": 3
+  },
+  "resolutions": [
+    {
+      "finding_index": 1,
+      "review_finding_title": "Test suite covers ~30 of ~45 spec scenarios — load-bearing paths only",
+      "file": "tests/run.sh:1",
+      "severity": "WARNING",
+      "classification": "decision_required",
+      "action": "Applied user decision: file a GitHub issue on las-sal/orbit-status. Filed as orbit-status#1 with a detailed breakdown of the ~15 untested scenarios per capability, plus rationale (v0.1 trade-off, plain bash test runner, mtemp fixtures) and suggested closure path (extend test runner; ~half day's work; no design decisions needed).",
+      "user_decision": "file_github_issue",
+      "filed_issue": "https://github.com/las-sal/orbit-status/issues/1",
+      "ripple_flagged": []
+    },
+    {
+      "finding_index": 2,
+      "review_finding_title": "Stale line-count claims: docs say ~200/830 lines; actual is 1186",
+      "file": "openspec/changes/bootstrap-orbit-status-cli/design.md:29 + .claude/skills/openspec-status/SKILL.md:88",
+      "severity": "WARNING",
+      "classification": "trivial_fix",
+      "action": "Updated both files with the real count (1186) plus rationale explaining the size-growth (attention engine + 3-tier recommendation + multi-change focus ranking exceeded initial estimate). design.md framing kept the historical \"~150-300 line target\" as context and explained why current reality exceeds it; structure remains monolithic bash (single file, no build), so the growth is feature-scope not architectural drift.",
+      "ripple_flagged": []
+    },
+    {
+      "finding_index": 3,
+      "review_finding_title": "Group 18 (4 tasks) unchecked but explicitly user-driven",
+      "file": "tasks.md:134",
+      "severity": "SUGGESTION",
+      "classification": "informational_no_action",
+      "action": "No action. Already documented in the task descriptions as the user-validation handoff boundary; /opsx:archive will surface the unchecked tasks as a warning at archive time, which is the expected behavior.",
+      "ripple_flagged": []
+    },
+    {
+      "finding_index": 4,
+      "review_finding_title": "No external callers — cohesion trivially satisfied",
+      "file": "(cohesion meta)",
+      "severity": "SUGGESTION",
+      "classification": "informational_no_action",
+      "action": "No action. Stand-alone leaf binary; cohesion check is vacuously satisfied. Caller-surface growth (hypothetical orbit-status-dashboard, CI integrations) would make this non-trivial in future versions.",
+      "ripple_flagged": []
+    },
+    {
+      "finding_index": 5,
+      "review_finding_title": "In-context review limitation — recommend --fresh follow-up",
+      "file": "(meta)",
+      "severity": "SUGGESTION",
+      "classification": "escalated_to_next_step",
+      "action": "No action in this walk. The recommendation surfaces in the next-step menu after this address-reviews run; user can opt for /opsx:review --as system --fresh as the iter-2 system pass before archive.",
+      "ripple_flagged": []
+    }
+  ],
+  "ripple_flagged_files_aggregate": [],
+  "post_resolution_state": {
+    "remaining_findings_in_scope": 0,
+    "escalated_findings_persisted": 1,
+    "validate_passes": true,
+    "binary_line_count_actual": 1186,
+    "binary_line_count_docs_aligned": true,
+    "test_coverage_gap_tracked": "orbit-status#1"
+  },
+  "final_assessment": "5 findings walked. 2 resolved (line-count drift fixed in design.md + SKILL.md; test coverage gap tracked as orbit-status#1). 3 informational with no action. 1 escalated (recommend --fresh follow-up; surfaces in next-step menu). Ready to archive.",
+  "next_recommended": "Either (a) proceed directly to /opsx:archive bootstrap-orbit-status-cli (all WARNINGs from the iter-1 system review are now resolved or tracked; SUGGESTIONs are informational), or (b) run /opsx:review --as system --fresh as a final anchoring-free pass before archive (per orbit#13's review-mode framework — iter-2 system mode in a clean-context subagent). (a) is the practical close-out; (b) is the rigorous close-out."
+}

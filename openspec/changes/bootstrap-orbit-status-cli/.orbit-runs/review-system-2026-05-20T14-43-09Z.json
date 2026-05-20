@@ -1,0 +1,81 @@
+{
+  "command": "review",
+  "timestamp": "2026-05-20T14:43:09Z",
+  "change": "bootstrap-orbit-status-cli",
+  "mode": "system",
+  "iteration": 1,
+  "depth": "full",
+  "flags": {
+    "parallel": false,
+    "focus": null,
+    "strict": false,
+    "fresh": false,
+    "mark": false,
+    "skip_verify": false
+  },
+  "passes_run": ["0", "2", "3", "6"],
+  "passes_skipped": ["1", "4", "5"],
+  "passes_skipped_reasons": {
+    "1": "no openspec/specs/ baseline (greenfield change); no archived requirements to check against",
+    "4": "openspec/lenses/perspectives.md absent — no perspectives defined to walk",
+    "5": "openspec/lenses/critical-paths.md absent — no critical flows defined to walk"
+  },
+  "anchoring_note": "In-context review by the same AI that authored all 1186 lines of binary + 528 lines of tests across chunks 1-5. Recommend follow-up with /opsx:review --as system --fresh for higher signal (per orbit issue #13's review-mode framework).",
+  "findings_summary": {
+    "critical": 0,
+    "warning": 2,
+    "suggestion": 3,
+    "by_pass": {
+      "0": { "critical": 0, "warning": 1, "suggestion": 1 },
+      "2": { "critical": 0, "warning": 0, "suggestion": 1 },
+      "3": { "critical": 0, "warning": 0, "suggestion": 0 },
+      "6": { "critical": 0, "warning": 1, "suggestion": 1 }
+    }
+  },
+  "findings": [
+    {
+      "pass": "0",
+      "severity": "WARNING",
+      "file": "tests/run.sh",
+      "line": 1,
+      "title": "Test suite covers ~30 of ~45 spec scenarios — load-bearing paths only",
+      "recommendation": "Add tests for: jq-missing error path (mock PATH manipulation), malformed JSON parse-failure (the safe_jq path), archived_at tier-2 (dated dirname) + tier-3 (mtime), most-recent review JSON fresh-case triggers reviewing, mid-promotion edge (both explore/<name>/ and changes/<name>/ exist), stale_review emission in a controlled fixture, tier-1 verbatim read with a fresh next_recommended JSON, multi-thread mtime ranking, cross-bucket exploration-outranks-active. Task 16 marker notes acknowledge this as v2 polish; file a follow-up issue or add to tasks.md as group 19."
+    },
+    {
+      "pass": "6",
+      "severity": "WARNING",
+      "file": "openspec/changes/bootstrap-orbit-status-cli/design.md",
+      "line": 29,
+      "title": "Stale line-count claims: docs say ~200/830 lines; actual is 1186",
+      "recommendation": "design.md:29 says \"~200 lines target\"; SKILL.md:88 says \"~830 lines\"; actual binary is 1186. Update both with the real number + rationale (\"attention engine + 3-tier recommendation + multi-change ranking exceeded initial estimate; single-file bash structure preserved\"). Alternative: accept the drift and add to design.md's Risks/Trade-offs section noting feature-scope growth past the estimate."
+    },
+    {
+      "pass": "0",
+      "severity": "SUGGESTION",
+      "file": "openspec/changes/bootstrap-orbit-status-cli/tasks.md",
+      "line": 134,
+      "title": "Group 18 (4 tasks) unchecked but explicitly user-driven",
+      "recommendation": "Verify-change strictly considers them incomplete. Acceptable for this change — group 18 is the explicit user-validation handoff boundary. /opsx:archive will warn about unchecked tasks; that's expected here and the user can proceed past."
+    },
+    {
+      "pass": "2",
+      "severity": "SUGGESTION",
+      "file": "(cohesion meta)",
+      "line": 0,
+      "title": "No external callers — cohesion trivially satisfied",
+      "recommendation": "orbit-status is a leaf binary. Callers (the slash command + README) both reference the relative binary path correctly; verified. As this change's caller surface grows in future versions (a hypothetical orbit-status-dashboard, CI integrations), cohesion checks become non-trivial."
+    },
+    {
+      "pass": "6",
+      "severity": "SUGGESTION",
+      "file": "(meta)",
+      "line": 0,
+      "title": "In-context review limitation — recommend --fresh follow-up",
+      "recommendation": "Same-AI-wrote-and-reviewed pattern is the classic anchoring case. Re-run via /opsx:review bootstrap-orbit-status-cli --as system --fresh for higher signal. Per orbit issue #13's review-mode framework: fresh sessions maximize independence (better at finding net-new issues); same-AI continuation maximizes verification (better at checking whether prior findings were actually addressed). For iter-1 system-mode on a substantive change, fresh is the higher-signal choice."
+    }
+  ],
+  "stale_suppressed": [],
+  "final_assessment": "No critical issues. 2 warning(s) to consider. Ready to archive (with noted improvements).",
+  "iteration_note": "First system-mode run for this change. 5 prior proposal-mode iterations (3 internal + 1 external + 2 address-reviews) plus chunks 1-5 of apply work landed before this system review.",
+  "next_recommended": "Either (a) address the 2 warnings inline (line-count drift is trivial; test coverage gap is documentable as a v2 task or follow-up issue) and proceed to /opsx:archive bootstrap-orbit-status-cli, or (b) run /opsx:review --as system --fresh for an anchoring-free second opinion before archive. (a) is faster and likely sufficient given how mechanical both warnings are; (b) is the more rigorous orbit-canonical close-out per orbit issue #13's framework."
+}

@@ -26,7 +26,7 @@ This change also serves as the consumer-side test of orbit's overlay-as-distribu
 
 ### Implementation language: bash + `jq`
 
-The CLI is a bash script (~200 lines target) using `jq` for JSON parsing. Rationale: zero build infrastructure, ~10ms startup, native composability with shell pipelines, runs in CI without setup. `jq` is widely available on dev machines and CI runners; install guidance ships in the README.
+The CLI is a bash script using `jq` for JSON parsing. The v1 target was "~150–300 lines"; the binary landed at ~1186 lines, ~6× the upper bound. The growth came from the attention engine (4 closed-enum types, marker scanning with relative-path normalization, mtime comparisons for stale_review, audit-drift JSON ingestion), the 3-tier recommendation hierarchy (marker override, best-effort `/opsx:<verb>` parsing, tier-2 synthesis ruleset, tier-3 fallback), and multi-change focus ranking (composite-key sort with lexicographic tie-break, secondary_threads opinionated summary lines). Structure remains monolithic bash (single file, no build, no dependencies beyond `jq`); the line-count growth is feature-scope, not architectural drift. Rationale for staying with bash despite the size: zero build infrastructure, ~10ms startup, native composability with shell pipelines, runs in CI without setup. `jq` is widely available on dev machines and CI runners; install guidance ships in the README.
 
 Alternative considered: TypeScript/npm package. Rejected for v1 — heavy infrastructure (build, npm publish, semver, cross-platform) for a CLI that fits in 200 lines. Reconsider if real adoption demands cross-platform/package distribution.
 
