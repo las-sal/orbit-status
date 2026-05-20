@@ -1,0 +1,65 @@
+{
+  "command": "archive",
+  "timestamp": "2026-05-20T16:31:59Z",
+  "change": "bootstrap-orbit-status-cli",
+  "archive_path": "openspec/changes/archive/2026-05-20-bootstrap-orbit-status-cli/",
+  "audit": {
+    "ran": true,
+    "skipped_via_flag": false,
+    "failure_reason": null,
+    "findings_summary": { "critical": 0, "warning": 2, "suggestion": 0 },
+    "summary_path": null,
+    "note": "Pre-archive audit-drift ran inline as part of /opsx:archive Step 3.5. Cat 2 (lens staleness) degenerate (no openspec/lenses/). Cat 4 (archive coherence) vacuously satisfied (no prior archives in this project). Cat 1 (vocab residue) surfaced 3 '~830/~200 lines' references — all classified as historical-fidelity preserved (explore.md and proposal.md as the design record at proposal time; archived review JSON as audit trail). Cat 3 (cross-doc consistency) found 2 real drifts in README: test count claim (93 → 96) and commit-arc enumeration (10 items → 15+). Both fixed inline pre-archive. Per orbit's 'audit findings are informational, not gate' convention, archive would have proceeded either way; inline fix was preference for clean close-out."
+  },
+  "unresolved_markers": {
+    "found_at_archive_time": 0,
+    "user_action": "no_markers_found"
+  },
+  "user_decision": "proceeded_clean",
+  "sync_specs": {
+    "ran": true,
+    "skipped_reason": null,
+    "capabilities_updated": [
+      "orbit-status-distribution",
+      "orbit-status-output",
+      "orbit-status-phase-model",
+      "orbit-status-recommendation"
+    ],
+    "counts": { "added": 19, "modified": 0, "removed": 0, "renamed": 0 },
+    "note": "Greenfield case: openspec/specs/ was empty at archive time. All 4 capability deltas were pure ADDED Requirements; each became a freshly-created canonical baseline at openspec/specs/<capability>/spec.md. 19 requirements total now baseline (4 + 8 + 3 + 4 across the four capabilities). Future changes will delta against these."
+  },
+  "warnings": [
+    "Proposal warning (non-blocking, from openspec validate): 'Consider splitting changes with more than 10 deltas'. For bootstrap-orbit-status-cli the deltas total 19 across 4 capabilities; intentionally bundled into one change because it's the foundational bootstrap of orbit-status itself, and splitting greenfield capability creation across multiple changes adds ceremony without benefit. The pattern matches the bootstrap-openspec-orbit precedent (also a single multi-capability bootstrap change). Future feature additions to orbit-status are expected to split per capability."
+  ],
+  "context": {
+    "review_iterations_cumulative": {
+      "proposal_mode_internal": 3,
+      "proposal_mode_external": 1,
+      "address_reviews_proposal": 2,
+      "system_mode_internal": 1,
+      "system_mode_external": 1,
+      "address_reviews_system": 2,
+      "total_iterations": 10,
+      "total_findings_resolved": 21,
+      "total_critical_findings_ever": 0
+    },
+    "github_issues_filed_during_change": [
+      { "number": "orbit-status#1", "title": "v0.1 test coverage gap: ~15 spec scenarios untested (acknowledged trade-off, tracking for future closure)" },
+      { "number": "openspec-orbit#6", "title": "Overlay ships unmodified upstream files — should be delta-only" },
+      { "number": "openspec-orbit#7", "title": "Add convention/flag: AI should not auto-invoke opsx commands without explicit authorization" },
+      { "number": "openspec-orbit#8", "title": "Workflow commands (explore/propose/apply/verify) should emit run-summary JSONs with next_recommended" },
+      { "number": "openspec-orbit#9", "title": "propose command should recommend /opsx:review next, not /opsx:apply (orbit workflow has a proposal-mode review step)" },
+      { "number": "openspec-orbit#10", "title": "/opsx:address-reviews should auto-discover the most recent internal review JSON for the same scope" },
+      { "number": "openspec-orbit#11", "title": "/opsx:address-reviews should default to per-finding walk with full detail (regardless of input source); add explicit batch mode for bulk processing" },
+      { "number": "openspec-orbit#12", "title": "Review commands should dynamically recommend the next reviewer mode based on iteration history (and offer clean-vs-seeded external)" },
+      { "number": "openspec-orbit#13", "title": "Document the review-mode decision framework (in-context vs --fresh vs external)" },
+      { "number": "openspec-orbit#14", "title": "Make /opsx:address-reviews auto-cascade ripple-flagged files by default (reverse the v1 \"list, don't edit\" decision)" },
+      { "number": "openspec-orbit#15", "title": "Workflow inflection points should list available next-step options + recommended action (generalizes #12)" }
+    ],
+    "external_reviewers": [
+      { "iter": "proposal-1", "model": "Codex GPT-5", "findings": "0C / 4W / 5S — all resolved via iter-1 address-reviews + iter-3 ripple cleanup" },
+      { "iter": "system-1", "model": "GPT-5 Codex (fresh session, different from same-AI-internal)", "findings": "0C / 3W / 0S — all resolved + 1 side-effect bug discovered + 3 regression tests added" }
+    ],
+    "meta_validation": "The bootstrap change implementing orbit-status was reviewed using orbit's own review commands (orbit-orbit-orbit dogfooding — orbit-status being built using openspec-orbit which itself was bootstrapped using openspec). The anchoring-vs-fresh-context discipline was validated by example: 3 of 3 external system-review findings were missed by the in-context system review. The dogfooding surfaced 11 issues filed against orbit and orbit-status combined, providing concrete real-world fuel for upstream improvement work."
+  }
+}

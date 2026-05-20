@@ -219,7 +219,7 @@ Full rules in `openspec/changes/bootstrap-orbit-status-cli/specs/orbit-status-re
 tests/run.sh
 ```
 
-The test runner builds ephemeral fixtures under `mktemp` and exercises 93 key scenarios across the four capability specs plus schema validation against six fixture shapes (`empty-orbit`, `plain-openspec`, `exploring-only`, `mid-apply`, `with-archive`, `with-marker`). Comprehensive scenario-by-scenario coverage is a future polish task; v0.1 covers the load-bearing paths.
+The test runner builds ephemeral fixtures under `mktemp` and exercises 96 assertions across the four capability specs plus schema validation against six fixture shapes (`empty-orbit`, `plain-openspec`, `exploring-only`, `mid-apply`, `with-archive`, `with-marker`). Comprehensive scenario-by-scenario coverage is tracked as `orbit-status#1`; v0.1 covers the load-bearing paths plus three regression tests (W1/W2/W3) added during the external system review cycle.
 
 ## Project provenance
 
@@ -228,13 +228,18 @@ The test runner builds ephemeral fixtures under `mktemp` and exercises 93 key sc
 1. `initial: empty scaffold`
 2. `install: orbit overlay from las-sal/openspec-orbit`
 3. `add: bootstrap-orbit-status-cli change (proposal mode complete)`
-4. `External review (proposal, iter 1): bootstrap-orbit-status-cli` (Codex GPT-5)
+4. `External review (proposal, iter 1)` — *by Codex GPT-5*
 5. `close: iter-1 external review cycle`
 6. `apply: chunk 1 (scaffold + project detection)`
 7. `apply: chunk 2 (inventory + parsing)`
 8. `apply: chunk 3 (phase + attention + recommendation engine + focus ranking)`
 9. `apply: chunk 4 (output polish + plain-openspec degradation)`
 10. `apply: chunk 5 (integration + docs + tests)`
+11. `close: iter-1 system review cycle` — anchoring-aware in-context review
+12. `External review (system, iter 1)` — *by Codex GPT-5; surfaced 3 real bugs the in-context review missed*
+13. `close: iter-1 external system review cycle` — W1/W2/W3 + a side-effect bug fixed with regression tests
+14. `apply: group 18 manual validation complete — 79/79 tasks done`
+15. `archive: bootstrap-orbit-status-cli` *(this README's final pre-archive update)*
 
 The dogfooding surfaced 10 issues filed against openspec-orbit (`#6` through `#15`), covering overlay scope, terminal-prompt accuracy, dynamic next-step recommendations, address-reviews cascade-by-default, and workflow inflection-point UX. See `openspec/changes/bootstrap-orbit-status-cli/explore.md` for the design record and `openspec/changes/bootstrap-orbit-status-cli/.orbit-runs/` for the review history.
 
