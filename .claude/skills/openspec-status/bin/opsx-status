@@ -1,0 +1,239 @@
+#!/usr/bin/env bash
+# ============================================================================
+# opsx-status — status CLI for openspec-orbit projects
+#
+# Walks an openspec/ tree (plus .orbit-runs/ when present) and surfaces what's
+# active, what phase each change is in, what needs attention, and where the
+# developer is in the workflow. Read-only.
+#
+# Specs: openspec/changes/bootstrap-orbit-status-cli/specs/
+# Author: openspec-orbit
+# License: MIT
+# ============================================================================
+
+set -euo pipefail
+
+VERSION="0.1.0-chunk1"
+
+# ----------------------------------------------------------------------------
+# Defaults
+# ----------------------------------------------------------------------------
+
+DETAIL=false
+JSON=false
+CHANGE=""
+LIMIT=5
+
+# ----------------------------------------------------------------------------
+# Help text
+# ----------------------------------------------------------------------------
+
+usage() {
+  cat <<'EOF'
+Usage: opsx-status [--detail] [--json] [--change <name>] [--limit N]
+
+Status CLI for openspec-orbit projects. Walks an openspec/ tree and
+surfaces what's active, what phase each change is in, what needs attention,
+and where the developer is in the workflow. Read-only.
+
+Flags:
+  --detail              Expanded per-change view (full review history
+                        breakdown, full attention text, source field in
+                        recommendations, next_unchecked task description)
+  --json                Emit machine-readable JSON to stdout (suppresses
+                        human-formatted text). Top-level keys: project,
+                        focus, active, exploring, recent, totals.
+  --change <name>       Pin focus to a specific thread (overrides default
+                        most-recently-touched ranking)
+  --limit N             Cap recent[] length (default 5; N must be a
+                        non-negative integer)
+  --help, -h            Show this help
+  --version             Show version
+
+Exit codes:
+  0   Success
+  1   Operational error (openspec/ not found, --change names a missing
+      thread, --limit negative or non-numeric)
+  2   Dependency error (jq not on PATH)
+
+See .claude/skills/openspec-status/SKILL.md for the full surface and JSON
+schema documentation.
+EOF
+}
+
+# ----------------------------------------------------------------------------
+# Argument parsing
+# ----------------------------------------------------------------------------
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --detail)
+      DETAIL=true
+      shift
+      ;;
+    --json)
+      JSON=true
+      shift
+      ;;
+    --change)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --change requires a change name argument" >&2
+        exit 1
+      fi
+      CHANGE="$2"
+      shift 2
+      ;;
+    --limit)
+      if [[ $# -lt 2 ]]; then
+        echo "Error: --limit requires an integer argument" >&2
+        exit 1
+      fi
+      if ! [[ "$2" =~ ^[0-9]+$ ]]; then
+        echo "Error: --limit requires a non-negative integer, got: $2" >&2
+        exit 1
+      fi
+      LIMIT="$2"
+      shift 2
+      ;;
+    --help|-h)
+      usage
+      exit 0
+      ;;
+    --version)
+      echo "opsx-status $VERSION"
+      exit 0
+      ;;
+    *)
+      echo "Error: unknown argument: $1" >&2
+      echo "" >&2
+      usage >&2
+      exit 1
+      ;;
+  esac
+done
+
+# ----------------------------------------------------------------------------
+# Dependency check: jq
+# ----------------------------------------------------------------------------
+
+if ! command -v jq >/dev/null 2>&1; then
+  cat <<'EOF' >&2
+Error: jq is required but not found on PATH.
+
+Install:
+  macOS:        brew install jq
+  Ubuntu/Debian: sudo apt-get install jq
+  Other:         https://stedolan.github.io/jq/download/
+
+orbit-status uses jq for JSON parsing and emission; there is no fallback
+in v1. See orbit issue tracker for portability discussion.
+EOF
+  exit 2
+fi
+
+# ----------------------------------------------------------------------------
+# Locate project root
+#
+# Walks up from cwd looking for an openspec/ directory. Returns the
+# first ancestor that contains one.
+# ----------------------------------------------------------------------------
+
+find_project_root() {
+  local dir="$PWD"
+  while [[ "$dir" != "/" ]]; do
+    if [[ -d "$dir/openspec" ]]; then
+      printf '%s\n' "$dir"
+      return 0
+    fi
+    dir="$(dirname "$dir")"
+  done
+  # Final check at /
+  if [[ -d "/openspec" ]]; then
+    printf '%s\n' "/"
+    return 0
+  fi
+  return 1
+}
+
+if ! PROJECT_ROOT="$(find_project_root)"; then
+  cat <<EOF >&2
+Error: no openspec/ project found in cwd or any ancestor directory.
+
+Run opsx-status from within an openspec project, or run
+'openspec init' first to scaffold one.
+EOF
+  exit 1
+fi
+
+PROJECT_NAME="$(basename "$PROJECT_ROOT")"
+
+# ----------------------------------------------------------------------------
+# is_orbit_project detection
+#
+# True iff either:
+#   1. .claude/skills/openspec-review/ exists (orbit overlay marker), OR
+#   2. Any change directory under openspec/changes/ contains .orbit-runs/
+# ----------------------------------------------------------------------------
+
+detect_orbit_project() {
+  if [[ -d "$PROJECT_ROOT/.claude/skills/openspec-review" ]]; then
+    printf 'true\n'
+    return
+  fi
+  if [[ -d "$PROJECT_ROOT/openspec/changes" ]]; then
+    if find "$PROJECT_ROOT/openspec/changes" -type d -name ".orbit-runs" -print -quit 2>/dev/null | grep -q .; then
+      printf 'true\n'
+      return
+    fi
+  fi
+  printf 'false\n'
+}
+
+IS_ORBIT_PROJECT="$(detect_orbit_project)"
+
+# ----------------------------------------------------------------------------
+# Emit output
+#
+# Chunk 1 implements only the project block + structural placeholders for
+# the other top-level keys (per the spec requiring all six keys present).
+# Full status logic comes in chunks 2-4.
+# ----------------------------------------------------------------------------
+
+emit_json() {
+  jq -n \
+    --arg path "$PROJECT_ROOT" \
+    --arg name "$PROJECT_NAME" \
+    --argjson is_orbit "$IS_ORBIT_PROJECT" \
+    '{
+      project: {
+        path: $path,
+        name: $name,
+        is_orbit_project: $is_orbit
+      },
+      focus: null,
+      active: [],
+      exploring: [],
+      recent: [],
+      totals: { active: 0, exploring: 0, archived: 0 }
+    }'
+}
+
+emit_human() {
+  local tag=""
+  if [[ "$IS_ORBIT_PROJECT" == "true" ]]; then
+    tag=" (orbit project)"
+  fi
+  printf '%s%s\n' "$PROJECT_ROOT" "$tag"
+  echo ""
+  echo "opsx-status v$VERSION — scaffold (chunk 1)"
+  echo ""
+  echo "Project detection complete. Full status logic (active changes,"
+  echo "exploring, recent archives, attention signals, recommendations)"
+  echo "lands in chunks 2-4 of bootstrap-orbit-status-cli."
+}
+
+if $JSON; then
+  emit_json
+else
+  emit_human
+fi

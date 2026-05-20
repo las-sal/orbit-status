@@ -8,23 +8,23 @@ The 18 task groups below break naturally into 5 implementation chunks. `/opsx:ap
 
 ## 1. Skill scaffolding
 
-- [ ] 1.1 Create `.claude/skills/openspec-status/` directory
-- [ ] 1.2 Write `.claude/skills/openspec-status/SKILL.md` with frontmatter (name, description, license, metadata) and surface description
-- [ ] 1.3 Create `.claude/skills/openspec-status/bin/` directory
-- [ ] 1.4 Create `.claude/commands/opsx/status.md` with slash command body
+- [x] 1.1 Create `.claude/skills/openspec-status/` directory
+- [x] 1.2 Write `.claude/skills/openspec-status/SKILL.md` with frontmatter (name, description, license, metadata) and surface description
+- [x] 1.3 Create `.claude/skills/openspec-status/bin/` directory
+- [x] 1.4 Create `.claude/commands/opsx/status.md` with slash command body
 
 ## 2. CLI binary scaffolding
 
-- [ ] 2.1 Create `bin/opsx-status` executable bash script (shebang + `set -euo pipefail`)
-- [ ] 2.2 Implement `--help` output documenting flags and JSON schema
-- [ ] 2.3 Argument parsing: `--detail`, `--json`, `--change <name>`, `--limit N`
-- [ ] 2.4 Locate the project root by walking up from cwd looking for `openspec/`
-- [ ] 2.5 Verify `jq` is available; emit a clear error to stderr and exit non-zero if missing
+- [x] 2.1 Create `bin/opsx-status` executable bash script (shebang + `set -euo pipefail`)
+- [x] 2.2 Implement `--help` output documenting flags and JSON schema
+- [x] 2.3 Argument parsing: `--detail`, `--json`, `--change <name>`, `--limit N`
+- [x] 2.4 Locate the project root by walking up from cwd looking for `openspec/`
+- [x] 2.5 Verify `jq` is available; emit a clear error to stderr and exit non-zero if missing
 
 ## 3. Project detection (`is_orbit_project`)
 
-- [ ] 3.1 Implement `is_orbit_project` detection (overlay marker `.claude/skills/openspec-review/` OR any `.orbit-runs/` under `openspec/changes/`)
-- [ ] 3.2 Emit `project` block with `path`, `name` (basename of project root), `is_orbit_project`
+- [x] 3.1 Implement `is_orbit_project` detection (overlay marker `.claude/skills/openspec-review/` OR any `.orbit-runs/` under `openspec/changes/`)
+- [x] 3.2 Emit `project` block with `path`, `name` (basename of project root), `is_orbit_project`
 
 ## 4. Filesystem walk: changes inventory
 
