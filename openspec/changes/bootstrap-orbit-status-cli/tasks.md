@@ -28,25 +28,25 @@ The 18 task groups below break naturally into 5 implementation chunks. `/opsx:ap
 
 ## 4. Filesystem walk: changes inventory
 
-- [ ] 4.1 Enumerate active changes under `openspec/changes/` (excluding `archive/`)
-- [ ] 4.2 Enumerate explorations under `openspec/explore/`
-- [ ] 4.3 Enumerate archived changes under `openspec/changes/archive/`
-- [ ] 4.4 For each change/exploration, collect `artifacts_present` list (proposal, design, tasks, specs, explore, sketches) and `last_touched` mtime
-- [ ] 4.5 For each archived change in `recent[]`, compute `archived_at` per the 3-tier priority: (1) `timestamp` field from any `.orbit-runs/archive-<TS>.json`; (2) parse `<YYYY-MM-DD>-` prefix from the archived directory name, interpret as UTC midnight; (3) directory mtime as last resort. Emit as ISO-8601.
+- [x] 4.1 Enumerate active changes under `openspec/changes/` (excluding `archive/`)
+- [x] 4.2 Enumerate explorations under `openspec/explore/`
+- [x] 4.3 Enumerate archived changes under `openspec/changes/archive/`
+- [x] 4.4 For each change/exploration, collect `artifacts_present` list (proposal, design, tasks, specs, explore, sketches) and `last_touched` mtime
+- [x] 4.5 For each archived change in `recent[]`, compute `archived_at` per the 3-tier priority: (1) `timestamp` field from any `.orbit-runs/archive-<TS>.json`; (2) parse `<YYYY-MM-DD>-` prefix from the archived directory name, interpret as UTC midnight; (3) directory mtime as last resort. Emit as ISO-8601.
 
 ## 5. `tasks.md` parsing
 
-- [ ] 5.1 Count `[x]` and `[ ]` checkboxes per change's `tasks.md`
-- [ ] 5.2 Extract the first unchecked task description as `next_unchecked` (surfaced under `--detail`)
+- [x] 5.1 Count `[x]` and `[ ]` checkboxes per change's `tasks.md`
+- [x] 5.2 Extract the first unchecked task description as `next_unchecked` (surfaced under `--detail`)
 
 ## 6. JSON ingestion from `.orbit-runs/`
 
-- [ ] 6.1 List `.orbit-runs/*.json` per change and sort by embedded timestamp
-- [ ] 6.2 Identify most recent JSON's command type (review, address-reviews, audit-drift, archive)
-- [ ] 6.3 Extract `iteration`, `findings_summary`, `next_recommended`, `final_assessment` from the most recent JSON
-- [ ] 6.4 Sum review and address-reviews counters across all JSONs for `iterations_total` and `findings_resolved` (default view)
-- [ ] 6.5 Build per-mode breakdown counters (proposal-internal/external, system-internal/external, address-reviews-proposal/system) for `--detail`
-- [ ] 6.6 Handle JSON parse failures gracefully: when `jq` fails to parse a `.orbit-runs/*.json` file, log a warning to stderr naming the file, treat that file's data as absent, and continue the run (do not fail the whole invocation; satisfies the Error handling requirement in `orbit-status-output` spec)
+- [x] 6.1 List `.orbit-runs/*.json` per change and sort by embedded timestamp
+- [x] 6.2 Identify most recent JSON's command type (review, address-reviews, audit-drift, archive)
+- [x] 6.3 Extract `iteration`, `findings_summary`, `next_recommended`, `final_assessment` from the most recent JSON (helpers in place; consumed in chunk 3 by the recommendation engine + phase inference)
+- [x] 6.4 Sum review and address-reviews counters across all JSONs for `iterations_total` and `findings_resolved` (default view)
+- [x] 6.5 Build per-mode breakdown counters (proposal-internal/external, system-internal/external, address-reviews-proposal/system) for `--detail` (helpers in place; full breakdown emitted under `--detail` in chunk 3)
+- [x] 6.6 Handle JSON parse failures gracefully: when `jq` fails to parse a `.orbit-runs/*.json` file, log a warning to stderr naming the file, treat that file's data as absent, and continue the run (do not fail the whole invocation; satisfies the Error handling requirement in `orbit-status-output` spec)
 
 ## 7. Phase inference
 

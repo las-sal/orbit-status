@@ -13,20 +13,20 @@
 
 set -euo pipefail
 
-VERSION="0.1.0-chunk1"
+VERSION="0.1.0-chunk2"
 
-# ----------------------------------------------------------------------------
+# ============================================================================
 # Defaults
-# ----------------------------------------------------------------------------
+# ============================================================================
 
 DETAIL=false
 JSON=false
 CHANGE=""
 LIMIT=5
 
-# ----------------------------------------------------------------------------
+# ============================================================================
 # Help text
-# ----------------------------------------------------------------------------
+# ============================================================================
 
 usage() {
   cat <<'EOF'
@@ -61,20 +61,14 @@ schema documentation.
 EOF
 }
 
-# ----------------------------------------------------------------------------
+# ============================================================================
 # Argument parsing
-# ----------------------------------------------------------------------------
+# ============================================================================
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --detail)
-      DETAIL=true
-      shift
-      ;;
-    --json)
-      JSON=true
-      shift
-      ;;
+    --detail) DETAIL=true; shift ;;
+    --json) JSON=true; shift ;;
     --change)
       if [[ $# -lt 2 ]]; then
         echo "Error: --change requires a change name argument" >&2
@@ -95,14 +89,8 @@ while [[ $# -gt 0 ]]; do
       LIMIT="$2"
       shift 2
       ;;
-    --help|-h)
-      usage
-      exit 0
-      ;;
-    --version)
-      echo "opsx-status $VERSION"
-      exit 0
-      ;;
+    --help|-h) usage; exit 0 ;;
+    --version) echo "opsx-status $VERSION"; exit 0 ;;
     *)
       echo "Error: unknown argument: $1" >&2
       echo "" >&2
@@ -112,9 +100,9 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# ----------------------------------------------------------------------------
+# ============================================================================
 # Dependency check: jq
-# ----------------------------------------------------------------------------
+# ============================================================================
 
 if ! command -v jq >/dev/null 2>&1; then
   cat <<'EOF' >&2
@@ -126,17 +114,14 @@ Install:
   Other:         https://stedolan.github.io/jq/download/
 
 orbit-status uses jq for JSON parsing and emission; there is no fallback
-in v1. See orbit issue tracker for portability discussion.
+in v1.
 EOF
   exit 2
 fi
 
-# ----------------------------------------------------------------------------
+# ============================================================================
 # Locate project root
-#
-# Walks up from cwd looking for an openspec/ directory. Returns the
-# first ancestor that contains one.
-# ----------------------------------------------------------------------------
+# ============================================================================
 
 find_project_root() {
   local dir="$PWD"
@@ -147,11 +132,7 @@ find_project_root() {
     fi
     dir="$(dirname "$dir")"
   done
-  # Final check at /
-  if [[ -d "/openspec" ]]; then
-    printf '%s\n' "/"
-    return 0
-  fi
+  [[ -d "/openspec" ]] && { printf '/\n'; return 0; }
   return 1
 }
 
@@ -167,23 +148,44 @@ fi
 
 PROJECT_NAME="$(basename "$PROJECT_ROOT")"
 
-# ----------------------------------------------------------------------------
+# ============================================================================
+# Cross-platform helpers (BSD stat vs GNU stat)
+# ============================================================================
+
+# Returns POSIX epoch seconds for a file's mtime, or empty on error.
+mtime_epoch() {
+  local f="$1"
+  [[ ! -e "$f" ]] && return 1
+  if [[ "$(uname)" == "Darwin" ]]; then
+    stat -f '%m' "$f" 2>/dev/null
+  else
+    stat -c '%Y' "$f" 2>/dev/null
+  fi
+}
+
+# Returns ISO-8601 UTC timestamp for a file's mtime (e.g., 2026-05-20T12:34:56Z).
+mtime_iso() {
+  local f="$1"
+  local epoch
+  epoch="$(mtime_epoch "$f")" || { echo "1970-01-01T00:00:00Z"; return 1; }
+  if [[ "$(uname)" == "Darwin" ]]; then
+    date -u -r "$epoch" '+%Y-%m-%dT%H:%M:%SZ'
+  else
+    date -u -d "@$epoch" '+%Y-%m-%dT%H:%M:%SZ'
+  fi
+}
+
+# ============================================================================
 # is_orbit_project detection
-#
-# True iff either:
-#   1. .claude/skills/openspec-review/ exists (orbit overlay marker), OR
-#   2. Any change directory under openspec/changes/ contains .orbit-runs/
-# ----------------------------------------------------------------------------
+# ============================================================================
 
 detect_orbit_project() {
   if [[ -d "$PROJECT_ROOT/.claude/skills/openspec-review" ]]; then
-    printf 'true\n'
-    return
+    printf 'true\n'; return
   fi
   if [[ -d "$PROJECT_ROOT/openspec/changes" ]]; then
     if find "$PROJECT_ROOT/openspec/changes" -type d -name ".orbit-runs" -print -quit 2>/dev/null | grep -q .; then
-      printf 'true\n'
-      return
+      printf 'true\n'; return
     fi
   fi
   printf 'false\n'
@@ -191,19 +193,353 @@ detect_orbit_project() {
 
 IS_ORBIT_PROJECT="$(detect_orbit_project)"
 
-# ----------------------------------------------------------------------------
-# Emit output
+# ============================================================================
+# Enumeration: active changes, explorations, archived changes
+# ============================================================================
+
+enumerate_active_changes() {
+  local d="$PROJECT_ROOT/openspec/changes"
+  [[ ! -d "$d" ]] && return 0
+  find "$d" -mindepth 1 -maxdepth 1 -type d ! -name archive 2>/dev/null | sort
+}
+
+enumerate_explorations() {
+  local d="$PROJECT_ROOT/openspec/explore"
+  [[ ! -d "$d" ]] && return 0
+  find "$d" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort
+}
+
+enumerate_archived_changes() {
+  local d="$PROJECT_ROOT/openspec/changes/archive"
+  [[ ! -d "$d" ]] && return 0
+  # Sorted reverse so newest dated-prefix shows first (also re-sorted by
+  # archived_at after computation, but this gives a sane initial order).
+  find "$d" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -r
+}
+
+# ============================================================================
+# Per-change collection: artifacts, last_touched, tasks counts, next_unchecked
+# ============================================================================
+
+# Emits a JSON array (string) of artifact names present in the change dir.
+collect_artifacts_present() {
+  local dir="$1"
+  local present=()
+  [[ -f "$dir/proposal.md" ]] && present+=("proposal")
+  [[ -f "$dir/design.md"   ]] && present+=("design")
+  [[ -f "$dir/tasks.md"    ]] && present+=("tasks")
+  [[ -d "$dir/specs"       ]] && present+=("specs")
+  [[ -f "$dir/explore.md"  ]] && present+=("explore")
+  [[ -d "$dir/sketches"    ]] && present+=("sketches")
+  if [[ ${#present[@]} -eq 0 ]]; then
+    echo '[]'
+  else
+    printf '%s\n' "${present[@]}" | jq -R . | jq -sc .
+  fi
+}
+
+# Returns the most recent mtime across artifact files + specs/ + .orbit-runs/
+# as ISO-8601. Falls back to 1970-01-01T00:00:00Z if no files exist.
+compute_last_touched() {
+  local dir="$1"
+  local newest_epoch=0
+
+  # Stat candidate files (markdown artifacts at the dir root)
+  local f
+  for f in "$dir/proposal.md" "$dir/design.md" "$dir/tasks.md" "$dir/explore.md"; do
+    [[ -f "$f" ]] || continue
+    local epoch
+    epoch="$(mtime_epoch "$f")" || continue
+    (( epoch > newest_epoch )) && newest_epoch=$epoch
+  done
+
+  # Walk specs/ and .orbit-runs/
+  local sub
+  for sub in "$dir/specs" "$dir/.orbit-runs" "$dir/sketches"; do
+    [[ -d "$sub" ]] || continue
+    while IFS= read -r f; do
+      [[ -f "$f" ]] || continue
+      local epoch
+      epoch="$(mtime_epoch "$f")" || continue
+      (( epoch > newest_epoch )) && newest_epoch=$epoch
+    done < <(find "$sub" -type f 2>/dev/null)
+  done
+
+  if (( newest_epoch == 0 )); then
+    echo "1970-01-01T00:00:00Z"
+  else
+    if [[ "$(uname)" == "Darwin" ]]; then
+      date -u -r "$newest_epoch" '+%Y-%m-%dT%H:%M:%SZ'
+    else
+      date -u -d "@$newest_epoch" '+%Y-%m-%dT%H:%M:%SZ'
+    fi
+  fi
+}
+
+# Counts [x] vs [ ] checkboxes in tasks.md. Emits JSON object or "null".
+count_tasks() {
+  local tasks_file="$1"
+  if [[ ! -f "$tasks_file" ]]; then
+    echo "null"; return
+  fi
+  local completed
+  local unchecked
+  completed=$(grep -c '^- \[x\]' "$tasks_file" 2>/dev/null || true)
+  unchecked=$(grep -c '^- \[ \]' "$tasks_file" 2>/dev/null || true)
+  completed=${completed:-0}
+  unchecked=${unchecked:-0}
+  local total=$((completed + unchecked))
+  jq -n --argjson t "$total" --argjson c "$completed" --argjson u "$unchecked" \
+    '{total: $t, completed: $c, unchecked: $u}'
+}
+
+# Extracts the description of the first `- [ ] N.M(?:a-z)? description` line
+# in tasks.md. Returns "null" if none. The optional letter suffix accommodates
+# tasks like "9.1a" which our own dogfooding produced (spec regex spec'd day-1
+# was strict N.M only; loosened here to single-letter suffix to be permissive
+# while still skipping clearly malformed lines).
+find_next_unchecked() {
+  local tasks_file="$1"
+  if [[ ! -f "$tasks_file" ]]; then
+    echo null; return
+  fi
+  local line
+  line=$(grep -m1 -E '^- \[ \] [0-9]+\.[0-9]+[a-z]? ' "$tasks_file" 2>/dev/null || true)
+  if [[ -z "$line" ]]; then
+    echo null; return
+  fi
+  local desc
+  desc=$(echo "$line" | sed -E 's/^- \[ \] [0-9]+\.[0-9]+[a-z]? //')
+  jq -n --arg d "$desc" '$d'
+}
+
+# ============================================================================
+# .orbit-runs/ JSON ingestion
+# ============================================================================
+
+# Lists *.json files in a change's .orbit-runs/, sorted by embedded ISO-8601
+# timestamp (which sorts lexicographically). Empty output if no dir/files.
+list_orbit_runs() {
+  local change_dir="$1"
+  local runs_dir="$change_dir/.orbit-runs"
+  [[ ! -d "$runs_dir" ]] && return 0
+  find "$runs_dir" -maxdepth 1 -type f -name '*.json' 2>/dev/null | sort
+}
+
+# Returns path of most recent .orbit-runs JSON for a change (empty if none).
+latest_orbit_run() {
+  list_orbit_runs "$1" | tail -1
+}
+
+# Computes review_history summary (default view): iterations_total +
+# findings_resolved. Returns "null" if no .orbit-runs/.
 #
-# Chunk 1 implements only the project block + structural placeholders for
-# the other top-level keys (per the spec requiring all six keys present).
-# Full status logic comes in chunks 2-4.
-# ----------------------------------------------------------------------------
+# - iterations_total: count of review-*.json + address-reviews-*.json files
+# - findings_resolved: sum of .resolution_summary.resolved across all
+#   address-reviews-*.json files. Malformed JSONs are warned-and-skipped.
+compute_review_history_summary() {
+  local change_dir="$1"
+  local runs_dir="$change_dir/.orbit-runs"
+
+  if [[ ! -d "$runs_dir" ]]; then
+    echo null; return
+  fi
+
+  local iter_count
+  iter_count=$(find "$runs_dir" -maxdepth 1 -type f \
+    \( -name 'review-*.json' -o -name 'address-reviews-*.json' \) \
+    2>/dev/null | wc -l | tr -d ' ')
+
+  local findings_resolved=0
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    if ! jq -e . "$f" >/dev/null 2>&1; then
+      echo "Warning: failed to parse JSON: $f (treating as absent)" >&2
+      continue
+    fi
+    local n
+    n=$(jq -r '.resolution_summary.resolved // 0' "$f" 2>/dev/null || echo 0)
+    findings_resolved=$((findings_resolved + n))
+  done < <(find "$runs_dir" -maxdepth 1 -type f -name 'address-reviews-*.json' 2>/dev/null)
+
+  if (( iter_count == 0 && findings_resolved == 0 )); then
+    echo null
+  else
+    jq -n --argjson i "$iter_count" --argjson f "$findings_resolved" \
+      '{iterations_total: $i, findings_resolved: $f}'
+  fi
+}
+
+# ============================================================================
+# archived_at (3-tier priority — spec'd in orbit-status-output)
+# ============================================================================
+
+# Tier 1: archive-*.json timestamp field
+# Tier 2: <YYYY-MM-DD>- prefix on archived dir name → UTC midnight
+# Tier 3: directory mtime
+compute_archived_at() {
+  local archived_dir="$1"
+
+  # Tier 1
+  local archive_json
+  archive_json=$(find "$archived_dir/.orbit-runs" -maxdepth 1 -type f \
+    -name 'archive-*.json' 2>/dev/null | sort | tail -1 || true)
+  if [[ -n "$archive_json" && -f "$archive_json" ]]; then
+    if jq -e . "$archive_json" >/dev/null 2>&1; then
+      local ts
+      ts=$(jq -r '.timestamp // empty' "$archive_json" 2>/dev/null || true)
+      if [[ -n "$ts" ]]; then
+        echo "$ts"; return
+      fi
+    else
+      echo "Warning: failed to parse JSON: $archive_json (treating as absent)" >&2
+    fi
+  fi
+
+  # Tier 2
+  local dir_name
+  dir_name=$(basename "$archived_dir")
+  if [[ "$dir_name" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2})- ]]; then
+    echo "${BASH_REMATCH[1]}T00:00:00Z"; return
+  fi
+
+  # Tier 3
+  mtime_iso "$archived_dir"
+}
+
+# Strips <YYYY-MM-DD>- prefix from archived dir name.
+clean_archived_name() {
+  local n="$1"
+  if [[ "$n" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}-(.+)$ ]]; then
+    echo "${BASH_REMATCH[1]}"
+  else
+    echo "$n"
+  fi
+}
+
+# ============================================================================
+# Build a ChangeRecord
+# ============================================================================
+
+# Args:
+#   $1 = change dir absolute path
+#   $2 = kind ("active" | "exploring" | "recent")
+# Emits a JSON ChangeRecord to stdout.
+build_change_record() {
+  local dir="$1"
+  local kind="$2"
+  local name
+
+  if [[ "$kind" == "recent" ]]; then
+    name=$(clean_archived_name "$(basename "$dir")")
+  else
+    name=$(basename "$dir")
+  fi
+
+  local artifacts
+  artifacts=$(collect_artifacts_present "$dir")
+
+  local last_touched
+  last_touched=$(compute_last_touched "$dir")
+
+  local review_history
+  review_history=$(compute_review_history_summary "$dir")
+
+  # Tasks: only meaningful if tasks.md exists; otherwise null.
+  local tasks="null"
+  if [[ -f "$dir/tasks.md" ]]; then
+    tasks=$(count_tasks "$dir/tasks.md")
+    if $DETAIL; then
+      local nxt
+      nxt=$(find_next_unchecked "$dir/tasks.md")
+      tasks=$(echo "$tasks" | jq --argjson n "$nxt" '. + {next_unchecked: $n}')
+    fi
+  fi
+
+  if [[ "$kind" == "recent" ]]; then
+    local archived_at
+    archived_at=$(compute_archived_at "$dir")
+    jq -n \
+      --arg name "$name" \
+      --argjson artifacts "$artifacts" \
+      --argjson tasks "$tasks" \
+      --argjson review_history "$review_history" \
+      --arg last_touched "$last_touched" \
+      --arg archived_at "$archived_at" \
+      '{
+        name: $name,
+        artifacts_present: $artifacts,
+        tasks: $tasks,
+        review_history: $review_history,
+        last_touched: $last_touched,
+        archived_at: $archived_at
+      }'
+  else
+    jq -n \
+      --arg name "$name" \
+      --argjson artifacts "$artifacts" \
+      --argjson tasks "$tasks" \
+      --argjson review_history "$review_history" \
+      --arg last_touched "$last_touched" \
+      '{
+        name: $name,
+        artifacts_present: $artifacts,
+        tasks: $tasks,
+        review_history: $review_history,
+        last_touched: $last_touched
+      }'
+  fi
+}
+
+# Build a JSON array of ChangeRecords for a given kind.
+build_active_array() {
+  local out
+  while IFS= read -r d; do
+    [[ -z "$d" ]] && continue
+    build_change_record "$d" active
+  done < <(enumerate_active_changes) | jq -sc .
+}
+
+build_exploring_array() {
+  while IFS= read -r d; do
+    [[ -z "$d" ]] && continue
+    build_change_record "$d" exploring
+  done < <(enumerate_explorations) | jq -sc .
+}
+
+# Builds recent[] array, sorted by archived_at desc, capped to LIMIT.
+build_recent_array() {
+  while IFS= read -r d; do
+    [[ -z "$d" ]] && continue
+    build_change_record "$d" recent
+  done < <(enumerate_archived_changes) \
+    | jq -sc --argjson lim "$LIMIT" 'sort_by(.archived_at) | reverse | .[0:$lim]'
+}
+
+# ============================================================================
+# Emit
+# ============================================================================
 
 emit_json() {
+  local active_arr
+  active_arr=$(build_active_array)
+  local exploring_arr
+  exploring_arr=$(build_exploring_array)
+  local recent_arr
+  recent_arr=$(build_recent_array)
+
+  # Total archived count (full, not capped by --limit)
+  local archived_total
+  archived_total=$(enumerate_archived_changes | wc -l | tr -d ' ')
+
   jq -n \
     --arg path "$PROJECT_ROOT" \
     --arg name "$PROJECT_NAME" \
     --argjson is_orbit "$IS_ORBIT_PROJECT" \
+    --argjson active "$active_arr" \
+    --argjson exploring "$exploring_arr" \
+    --argjson recent "$recent_arr" \
+    --argjson archived_total "$archived_total" \
     '{
       project: {
         path: $path,
@@ -211,10 +547,14 @@ emit_json() {
         is_orbit_project: $is_orbit
       },
       focus: null,
-      active: [],
-      exploring: [],
-      recent: [],
-      totals: { active: 0, exploring: 0, archived: 0 }
+      active: $active,
+      exploring: $exploring,
+      recent: $recent,
+      totals: {
+        active: ($active | length),
+        exploring: ($exploring | length),
+        archived: $archived_total
+      }
     }'
 }
 
@@ -225,11 +565,54 @@ emit_human() {
   fi
   printf '%s%s\n' "$PROJECT_ROOT" "$tag"
   echo ""
-  echo "opsx-status v$VERSION — scaffold (chunk 1)"
+  echo "opsx-status v$VERSION — inventory + parsing"
   echo ""
-  echo "Project detection complete. Full status logic (active changes,"
-  echo "exploring, recent archives, attention signals, recommendations)"
-  echo "lands in chunks 2-4 of bootstrap-orbit-status-cli."
+
+  # Counts only (chunk 2 doesn't render the focus block or per-change details)
+  local active_count
+  active_count=$(enumerate_active_changes | wc -l | tr -d ' ')
+  local exploring_count
+  exploring_count=$(enumerate_explorations | wc -l | tr -d ' ')
+  local archived_count
+  archived_count=$(enumerate_archived_changes | wc -l | tr -d ' ')
+
+  if (( active_count > 0 )); then
+    echo "Active: $active_count thread$( [[ $active_count -ne 1 ]] && echo s )"
+    while IFS= read -r d; do
+      [[ -z "$d" ]] && continue
+      local n; n=$(basename "$d")
+      local rec; rec=$(build_change_record "$d" active)
+      local tot ckd
+      tot=$(echo "$rec" | jq -r '.tasks.total // 0')
+      ckd=$(echo "$rec" | jq -r '.tasks.completed // 0')
+      printf '  %s — %s/%s tasks\n' "$n" "$ckd" "$tot"
+    done < <(enumerate_active_changes)
+    echo ""
+  fi
+
+  if (( exploring_count > 0 )); then
+    echo "Exploring: $exploring_count thread$( [[ $exploring_count -ne 1 ]] && echo s )"
+    while IFS= read -r d; do
+      [[ -z "$d" ]] && continue
+      local n; n=$(basename "$d")
+      printf '  %s\n' "$n"
+    done < <(enumerate_explorations)
+    echo ""
+  fi
+
+  if (( archived_count > 0 )); then
+    echo "Recently archived: $archived_count total (showing up to $LIMIT)"
+    build_recent_array | jq -r '.[] | "  \(.name) · archived \(.archived_at | split("T")[0])"'
+    echo ""
+  fi
+
+  if (( active_count == 0 && exploring_count == 0 && archived_count == 0 )); then
+    echo "No active workflow. Use /opsx:explore to start one."
+    echo ""
+  fi
+
+  echo "(Phase inference, attention signals, focus/recommendation"
+  echo " — land in chunk 3 of bootstrap-orbit-status-cli.)"
 }
 
 if $JSON; then
