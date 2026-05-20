@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-VERSION="0.1.0-chunk3"
+VERSION="0.1.0-chunk4"
 
 # ============================================================================
 # Defaults
@@ -327,6 +327,86 @@ compute_review_history_summary() {
   else
     jq -n --argjson i "$iter_count" --argjson f "$findings_resolved" \
       '{iterations_total: $i, findings_resolved: $f}'
+  fi
+}
+
+# Detailed review_history with per-mode breakdown (used under --detail).
+# Counts:
+#   proposal_internal:        review-proposal-*.json
+#   proposal_external:        external-proposal-*.md
+#   system_internal:          review-system-*.json
+#   system_external:          external-system-*.md
+#   address_reviews_proposal: address-reviews-*.json whose source traces to proposal mode
+#   address_reviews_system:   address-reviews-*.json whose source traces to system mode
+compute_review_history_detail() {
+  local change_dir="$1"
+  local runs_dir="$change_dir/.orbit-runs"
+  [[ ! -d "$runs_dir" ]] && { echo null; return; }
+
+  local prop_int=0 prop_ext=0 sys_int=0 sys_ext=0
+  local ar_prop=0 ar_sys=0
+  local findings_resolved=0
+
+  # Per-mode internal reviews (filename-based)
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    case "$(basename "$f")" in
+      review-proposal-*) prop_int=$((prop_int + 1)) ;;
+      review-system-*)   sys_int=$((sys_int + 1)) ;;
+    esac
+  done < <(find "$runs_dir" -maxdepth 1 -type f -name 'review-*.json' 2>/dev/null)
+
+  # External review files (markdown)
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    case "$(basename "$f")" in
+      external-proposal-*) prop_ext=$((prop_ext + 1)) ;;
+      external-system-*)   sys_ext=$((sys_ext + 1)) ;;
+    esac
+  done < <(find "$runs_dir" -maxdepth 1 -type f -name 'external-*.md' 2>/dev/null)
+
+  # Address-reviews per mode + findings_resolved
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    if ! jq -e . "$f" >/dev/null 2>&1; then
+      echo "Warning: failed to parse JSON: $f (treating as absent)" >&2
+      continue
+    fi
+    local source_field
+    source_field=$(jq -r '.source_path // .source // empty' "$f" 2>/dev/null || true)
+    case "$source_field" in
+      *external-proposal-*|*review-proposal-*) ar_prop=$((ar_prop + 1)) ;;
+      *external-system-*|*review-system-*)     ar_sys=$((ar_sys + 1)) ;;
+      *) ar_prop=$((ar_prop + 1)) ;;  # default: proposal (inline_markers from --mark is proposal-only)
+    esac
+    local n
+    n=$(jq -r '.resolution_summary.resolved // 0' "$f" 2>/dev/null || echo 0)
+    findings_resolved=$((findings_resolved + n))
+  done < <(find "$runs_dir" -maxdepth 1 -type f -name 'address-reviews-*.json' 2>/dev/null)
+
+  local iter_total=$((prop_int + prop_ext + sys_int + sys_ext + ar_prop + ar_sys))
+
+  if (( iter_total == 0 )); then
+    echo null
+  else
+    jq -n \
+      --argjson it "$iter_total" \
+      --argjson fr "$findings_resolved" \
+      --argjson pi "$prop_int" --argjson pe "$prop_ext" \
+      --argjson si "$sys_int" --argjson se "$sys_ext" \
+      --argjson ap "$ar_prop" --argjson as "$ar_sys" \
+      '{
+        iterations_total: $it,
+        findings_resolved: $fr,
+        breakdown: {
+          proposal_internal: $pi,
+          proposal_external: $pe,
+          system_internal: $si,
+          system_external: $se,
+          address_reviews_proposal: $ap,
+          address_reviews_system: $as
+        }
+      }'
   fi
 }
 
@@ -662,8 +742,10 @@ compute_recommended_next() {
     fi
   fi
 
-  # Emit
-  if $DETAIL; then
+  # Emit. Plain-openspec degradation: omit source even under --detail
+  # (tier 1 unreachable on plain-openspec; source field assumes orbit-aware
+  # consumers and adds noise without value on plain projects).
+  if $DETAIL && [[ "$IS_ORBIT_PROJECT" == "true" ]]; then
     jq -nc \
       --arg c "$cmd" --arg a "$args" --arg r "$reason" --arg s "$source_label" \
       '{command: $c, args: $a, reason: $r, source: $s}'
@@ -691,7 +773,11 @@ build_change_record() {
   local artifacts last_touched review_history phase attention tasks
   artifacts=$(collect_artifacts_present "$dir")
   last_touched=$(compute_last_touched "$dir")
-  review_history=$(compute_review_history_summary "$dir")
+  if $DETAIL; then
+    review_history=$(compute_review_history_detail "$dir")
+  else
+    review_history=$(compute_review_history_summary "$dir")
+  fi
   phase=$(infer_phase "$dir" "$kind")
 
   # Attention: only for active + exploring (archived changes don't carry live attention)
@@ -729,6 +815,11 @@ build_change_record() {
       attention: $attention,
       last_touched: $last_touched
     }')
+
+  # Plain-openspec degradation: omit review_history when not an orbit project.
+  if [[ "$IS_ORBIT_PROJECT" == "false" ]]; then
+    base=$(echo "$base" | jq -c 'del(.review_history)')
+  fi
 
   if [[ "$kind" == "recent" ]]; then
     local archived_at
@@ -984,20 +1075,65 @@ emit_human() {
     pphase=$(echo "$primary_record" | jq -r '.phase')
     ptasks=$(echo "$primary_record" | jq -r 'if (.tasks // null) != null and (.tasks.total // 0) > 0 then "\(.tasks.completed)/\(.tasks.total) tasks" else "" end')
     pattn=$(echo "$primary_record" | jq -r 'if ((.attention // []) | length) > 0 then "\(.attention | length) attention" else "" end')
-    # Compose ' · '-separated state segments (bash IFS join is multi-char-unsafe;
-    # build the string explicitly instead).
+
+    # Compose ' · '-separated state segments
     local primary_line=""
-    if [[ -n "$ptasks" ]]; then
-      primary_line="$ptasks"
-    fi
+    [[ -n "$ptasks" ]] && primary_line="$ptasks"
     if [[ -n "$pattn" ]]; then
-      if [[ -n "$primary_line" ]]; then
-        primary_line="$primary_line · $pattn"
-      else
-        primary_line="$pattn"
-      fi
+      [[ -n "$primary_line" ]] && primary_line="$primary_line · $pattn" || primary_line="$pattn"
     fi
     [[ -n "$primary_line" ]] && printf '  %s\n' "$primary_line"
+
+    # --detail expansions: next_unchecked, attention details, review_history breakdown
+    if $DETAIL; then
+      local pnext
+      pnext=$(echo "$primary_record" | jq -r '.tasks.next_unchecked // empty')
+      if [[ -n "$pnext" && "$pnext" != "null" ]]; then
+        printf '  next: %s\n' "$pnext"
+      fi
+
+      local attn_count
+      attn_count=$(echo "$primary_record" | jq -r '(.attention // []) | length')
+      if (( attn_count > 0 )); then
+        echo ""
+        echo "  attention:"
+        echo "$primary_record" | jq -r '.attention[] |
+          if .type == "unresolved_marker" then
+            "    [\(.type)] \(.location) — \(.text)"
+          elif .type == "stale_review" then
+            "    [\(.type)] \(.location) (modified \(.since))"
+          elif .type == "audit_divergence" then
+            "    [\(.type)] \(.location) — \(.count) finding(s)"
+          else
+            "    [\(.type)] \(.location)"
+          end'
+      fi
+
+      # Review history (only emitted on orbit projects; omitted on plain-openspec)
+      local rh
+      rh=$(echo "$primary_record" | jq '.review_history // null')
+      if [[ "$rh" != "null" ]]; then
+        echo ""
+        local rh_iter rh_resolved
+        rh_iter=$(echo "$rh" | jq -r '.iterations_total // 0')
+        rh_resolved=$(echo "$rh" | jq -r '.findings_resolved // 0')
+        printf '  review history: %s iteration(s) · %s finding(s) resolved\n' "$rh_iter" "$rh_resolved"
+        local has_breakdown
+        has_breakdown=$(echo "$rh" | jq 'has("breakdown")')
+        if [[ "$has_breakdown" == "true" ]]; then
+          local pi pe si se ap as_
+          pi=$(echo "$rh" | jq -r '.breakdown.proposal_internal // 0')
+          pe=$(echo "$rh" | jq -r '.breakdown.proposal_external // 0')
+          si=$(echo "$rh" | jq -r '.breakdown.system_internal // 0')
+          se=$(echo "$rh" | jq -r '.breakdown.system_external // 0')
+          ap=$(echo "$rh" | jq -r '.breakdown.address_reviews_proposal // 0')
+          as_=$(echo "$rh" | jq -r '.breakdown.address_reviews_system // 0')
+          printf '    proposal: %s internal + %s external\n' "$pi" "$pe"
+          printf '    system: %s internal + %s external\n' "$si" "$se"
+          printf '    address-reviews: %s proposal + %s system\n' "$ap" "$as_"
+        fi
+      fi
+    fi
   fi
 
   # Recommended next
@@ -1012,6 +1148,13 @@ emit_human() {
     echo "Next: $rec_cmd"
   fi
   echo "  \"$rec_reason\""
+
+  # Under --detail (and orbit project), surface the recommendation's source.
+  if $DETAIL; then
+    local rec_source
+    rec_source=$(echo "$focus" | jq -r '.recommended_next.source // empty')
+    [[ -n "$rec_source" && "$rec_source" != "null" ]] && echo "  (source: $rec_source)"
+  fi
 
   # Secondary threads
   local sec_count

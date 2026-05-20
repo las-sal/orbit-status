@@ -82,27 +82,27 @@ The 18 task groups below break naturally into 5 implementation chunks. `/opsx:ap
 
 ## 11. JSON output (`--json`)
 
-- [ ] 11.1 Assemble top-level keys: `project`, `focus`, `active`, `exploring`, `recent`, `totals`
-- [ ] 11.2 Cap `recent[]` at `--limit N` (default 5), ordered by `archived_at` descending
-- [ ] 11.3 Emit valid JSON to stdout via `jq` for formatting
-- [ ] 11.4 Suppress all human-formatted text when `--json` is set
+- [x] 11.1 Assemble top-level keys: `project`, `focus`, `active`, `exploring`, `recent`, `totals`
+- [x] 11.2 Cap `recent[]` at `--limit N` (default 5), ordered by `archived_at` descending
+- [x] 11.3 Emit valid JSON to stdout via `jq` for formatting
+- [x] 11.4 Suppress all human-formatted text when `--json` is set
 
 ## 12. Human-readable rendering
 
-- [ ] 12.1 Render project header line with optional `(orbit project)` tag
-- [ ] 12.2 Render focus block: "You are <phase>-ing <name>" sentence + summary line (tasks, attention counts, last-touched)
-- [ ] 12.3 Render `Next:` line with `command args` plus a quoted `reason`
-- [ ] 12.4 Render "Other active" section (one line per secondary thread)
-- [ ] 12.5 Render "Recently archived" section (one line per archive, capped)
-- [ ] 12.6 Handle no-active-work case: emit project header + "No active workflow. Use /opsx:explore to start one."
+- [x] 12.1 Render project header line with optional `(orbit project)` tag
+- [x] 12.2 Render focus block: phase-aware summary sentence + primary state line (tasks · attention); under `--detail` adds `next:` task, expanded `attention:` block, and `review history:` breakdown
+- [x] 12.3 Render `Next:` line with `command args` plus a quoted `reason`; `(source: ...)` under `--detail` on orbit projects
+- [x] 12.4 Render "Other active" section (one line per secondary thread)
+- [x] 12.5 Render "Recently archived" section (one line per archive, capped)
+- [x] 12.6 Handle no-active-work case: emit project header + "No active workflow. Use /opsx:explore to start one."
 
 ## 13. Plain-openspec graceful degradation
 
-- [ ] 13.1 When `is_orbit_project: false`, omit `review_history` from every `ChangeRecord`
-- [ ] 13.2 When `is_orbit_project: false`, suppress `audit_divergence` attention type
-- [ ] 13.3 When `is_orbit_project: false`, omit `source` from `recommended_next`
-- [ ] 13.4 When `is_orbit_project: false`, drop the `(orbit project)` tag and per-change review-history line from human view
-- [ ] 13.5 Verify `unresolved_marker` and `stale_review` still emit on plain-openspec
+- [x] 13.1 When `is_orbit_project: false`, omit `review_history` from every `ChangeRecord` (jq `del(.review_history)` after construction)
+- [x] 13.2 When `is_orbit_project: false`, suppress `audit_divergence` attention type (`collect_attention` already gates on `IS_ORBIT_PROJECT`)
+- [x] 13.3 When `is_orbit_project: false`, omit `source` from `recommended_next` (the `--detail` branch in `compute_recommended_next` checks both `$DETAIL && [[ IS_ORBIT_PROJECT == true ]]`)
+- [x] 13.4 When `is_orbit_project: false`, drop the `(orbit project)` tag (header-line emission already conditional) and skip the review-history block in `--detail` human view (block only renders when `review_history != null`, which is omitted on plain-openspec per 13.1)
+- [x] 13.5 Verify `unresolved_marker` and `stale_review` still emit on plain-openspec — `collect_attention` only gates `audit_divergence` on `IS_ORBIT_PROJECT`; the other two attention types run unconditionally (stale_review needs a review JSON baseline which doesn't exist on plain-openspec, so it vacuously emits nothing — correct behavior)
 
 ## 14. Slash command (`/opsx:status`)
 
