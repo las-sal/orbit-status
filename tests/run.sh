@@ -282,6 +282,13 @@ test_output_spec() {
   # --version emits VERSION
   out=$("$OPSX_STATUS" --version 2>&1)
   assert_contains "--version output starts with opsx-status" "$out" "opsx-status"
+
+  # W3 regression (external system review iter-1): default human view's
+  # primary line includes last-touched relative time. Run against the
+  # mid-apply fixture, verify human output contains 'touched'.
+  fix=$(fixture_mid_apply)
+  out=$(cd "$fix" && "$OPSX_STATUS" 2>/dev/null)
+  assert_contains "W3 regression: default human view includes 'touched <rel>' segment" "$out" "touched"
 }
 
 # ============================================================================
@@ -344,6 +351,30 @@ test_phase_model_spec() {
   else
     fail "unresolved @review: marker emits attention entry" "expected >=1, got $marker_count"
   fi
+
+  # W2 regression (external system review iter-1): phase freshness uses
+  # filename-embedded timestamp, NOT filesystem mtime. Set up a fixture
+  # where the JSON's FILE mtime is fresh (just touched) but its FILENAME
+  # timestamp is ancient (2024). Phase should still be `applying` (rule 3),
+  # not `reviewing` (rule 2 should NOT fire because the filename ts is
+  # older than tasks.md).
+  fix="$TMP_BASE/w2-regression"
+  mkdir -p "$fix/.claude/skills/openspec-review" \
+    "$fix/openspec/changes/work/.orbit-runs"
+  echo "stub" > "$fix/.claude/skills/openspec-review/SKILL.md"
+  echo "## Why" > "$fix/openspec/changes/work/proposal.md"
+  cat > "$fix/openspec/changes/work/tasks.md" <<'EOF'
+- [x] 1.1 Done
+- [ ] 1.2 Pending
+EOF
+  cat > "$fix/openspec/changes/work/.orbit-runs/review-system-2024-01-01T00-00-00Z.json" <<'EOF'
+{"command":"review","timestamp":"2024-01-01T00:00:00Z","mode":"system","next_recommended":"/opsx:archive work"}
+EOF
+  # Touch the review JSON's mtime to NOW (simulating clone/cp/touch corruption)
+  touch "$fix/openspec/changes/work/.orbit-runs/review-system-2024-01-01T00-00-00Z.json"
+  out=$(cd "$fix" && "$OPSX_STATUS" --json 2>/dev/null)
+  phase=$(echo "$out" | jq -r '.active[0].phase')
+  assert_eq "W2 regression: fresh fs-mtime + old filename-ts → applying (rule 2 must NOT fire on mtime alone)" "applying" "$phase"
 }
 
 # ============================================================================
@@ -390,6 +421,33 @@ test_recommendation_spec() {
   fix=$(fixture_empty_orbit)
   out=$(cd "$fix" && "$OPSX_STATUS" --json 2>/dev/null)
   assert_json_lacks_key "tier-3 focus omits primary_change" "$(echo "$out" | jq -c '.focus')" "primary_change"
+
+  # W1 regression (external system review iter-1): list_orbit_runs sorts by
+  # embedded timestamp, NOT by full filename. Set up a fixture with two
+  # JSONs where the alphabetically-later prefix has the older timestamp.
+  # Tier-1 should source from the timestamp-newer JSON.
+  fix="$TMP_BASE/w1-regression"
+  mkdir -p "$fix/.claude/skills/openspec-review" \
+    "$fix/openspec/changes/work/.orbit-runs"
+  echo "stub" > "$fix/.claude/skills/openspec-review/SKILL.md"
+  echo "## Why" > "$fix/openspec/changes/work/proposal.md"
+  cat > "$fix/openspec/changes/work/tasks.md" <<'EOF'
+- [x] 1.1 Done
+- [ ] 1.2 Pending
+EOF
+  # Older timestamp, alphabetically later prefix (review-system > address-reviews)
+  cat > "$fix/openspec/changes/work/.orbit-runs/review-system-2026-05-20T09-00-00Z.json" <<'EOF'
+{"command":"review","timestamp":"2026-05-20T09:00:00Z","mode":"system","next_recommended":"OLDER — should NOT win"}
+EOF
+  # Newer timestamp, alphabetically earlier prefix
+  cat > "$fix/openspec/changes/work/.orbit-runs/address-reviews-2026-05-20T10-00-00Z.json" <<'EOF'
+{"command":"address-reviews","timestamp":"2026-05-20T10:00:00Z","next_recommended":"NEWER — SHOULD win","resolution_summary":{"resolved":0}}
+EOF
+  # Force the JSON mtimes to be NOW so phase rule 2 won't fire (newer than tasks.md)
+  # — we want to verify tier-1 picks the correct latest. Use --json output.
+  out=$(cd "$fix" && "$OPSX_STATUS" --json 2>/dev/null)
+  reason=$(echo "$out" | jq -r '.focus.recommended_next.reason')
+  assert_contains "W1 regression: latest_orbit_run sorts by embedded ts (newer wins despite later-alphabetical-prefix older sibling)" "$reason" "NEWER"
 }
 
 # ============================================================================

@@ -13,7 +13,7 @@
 
 set -euo pipefail
 
-VERSION="0.1.0-chunk4"
+VERSION="0.1.0-chunk5"
 
 # ============================================================================
 # Defaults
@@ -151,6 +151,53 @@ mtime_iso() {
   fi
 }
 
+# Extract the embedded ISO-8601 timestamp from an .orbit-runs filename and
+# convert to POSIX epoch seconds. Pattern: <command>-<YYYY-MM-DDTHH-MM-SSZ>.{json,md}
+# Returns 0 if no parseable timestamp. Used for ordering runs by the run's
+# semantic time (not by filesystem mtime, which is unstable under clone/cp/touch
+# — caught by external review iter-1).
+filename_ts_epoch() {
+  local f="$1"
+  local fname
+  fname=$(basename "$f")
+  if [[ "$fname" =~ ([0-9]{4})-([0-9]{2})-([0-9]{2})T([0-9]{2})-([0-9]{2})-([0-9]{2})Z ]]; then
+    local iso="${BASH_REMATCH[1]}-${BASH_REMATCH[2]}-${BASH_REMATCH[3]}T${BASH_REMATCH[4]}:${BASH_REMATCH[5]}:${BASH_REMATCH[6]}Z"
+    if [[ "$(uname)" == "Darwin" ]]; then
+      date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$iso" '+%s' 2>/dev/null || echo 0
+    else
+      date -u -d "$iso" '+%s' 2>/dev/null || echo 0
+    fi
+  else
+    echo 0
+  fi
+}
+
+# Format an ISO-8601 UTC timestamp as a relative time like "2h ago", "3d ago".
+# Returns "?" if unparseable. Used by emit_human's primary line per the
+# orbit-status-output spec requirement that the default view include
+# last-touched relative time (caught by external review iter-1).
+relative_time() {
+  local iso="$1"
+  [[ -z "$iso" || "$iso" == "null" || "$iso" == "1970-01-01T00:00:00Z" ]] && { echo "?"; return; }
+  local epoch
+  if [[ "$(uname)" == "Darwin" ]]; then
+    epoch=$(date -u -j -f '%Y-%m-%dT%H:%M:%SZ' "$iso" '+%s' 2>/dev/null || echo 0)
+  else
+    epoch=$(date -u -d "$iso" '+%s' 2>/dev/null || echo 0)
+  fi
+  [[ "$epoch" == "0" ]] && { echo "?"; return; }
+  local now_epoch delta
+  now_epoch=$(date -u +%s)
+  delta=$((now_epoch - epoch))
+  if   (( delta < 60 ));      then echo "just now"
+  elif (( delta < 3600 ));    then echo "$((delta/60))m ago"
+  elif (( delta < 86400 ));   then echo "$((delta/3600))h ago"
+  elif (( delta < 604800 ));  then echo "$((delta/86400))d ago"
+  elif (( delta < 2592000 )); then echo "$((delta/604800))w ago"
+  else echo "$((delta/2592000))mo ago"
+  fi
+}
+
 # ============================================================================
 # is_orbit_project detection
 # ============================================================================
@@ -282,7 +329,19 @@ list_orbit_runs() {
   local change_dir="$1"
   local runs_dir="$change_dir/.orbit-runs"
   [[ ! -d "$runs_dir" ]] && return 0
-  find "$runs_dir" -maxdepth 1 -type f -name '*.json' 2>/dev/null | sort
+  # Sort by the ISO-8601 timestamp embedded in each filename, not by full
+  # filename. Full-name sort orders alphabetically by command prefix
+  # (review-* sorts after address-reviews-* regardless of timestamp), which
+  # produced wrong "latest run" selections — caught by external system
+  # review iter-1.
+  while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    local fname; fname=$(basename "$f")
+    if [[ "$fname" =~ ([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}-[0-9]{2}-[0-9]{2}Z) ]]; then
+      printf '%s\t%s\n' "${BASH_REMATCH[1]}" "$f"
+    fi
+  done < <(find "$runs_dir" -maxdepth 1 -type f -name '*.json' 2>/dev/null) \
+    | sort | cut -f2-
 }
 
 latest_orbit_run() {
@@ -477,13 +536,17 @@ infer_phase() {
   local latest; latest=$(latest_orbit_run "$dir")
   if [[ -n "$latest" ]]; then
     local json_epoch tasks_epoch
-    json_epoch=$(mtime_epoch "$latest" 2>/dev/null || echo 0)
+    # Use the JSON's filename-embedded ISO-8601 timestamp, NOT the filesystem
+    # mtime. Filesystem mtimes are unstable under clone/cp/touch/checkout —
+    # an old run could be made to look fresh by touching the file. Filename
+    # timestamps reflect the run's semantic time. Caught by external system
+    # review iter-1.
+    json_epoch=$(filename_ts_epoch "$latest")
     tasks_epoch=0
     [[ -f "$dir/tasks.md" ]] && tasks_epoch=$(mtime_epoch "$dir/tasks.md" 2>/dev/null || echo 0)
 
-    # Strict > per spec ("newer than tasks.md mtime"). Equal mtimes mean
-    # tasks.md was just touched at the same second as the review JSON; treat
-    # that as tasks-wins so a fresh edit to tasks doesn't get stuck under a
+    # Strict > per spec ("newer than tasks.md mtime"). Equal timestamps fall
+    # through to rule 3 so a fresh edit to tasks doesn't get stuck under a
     # stale-by-the-second review JSON.
     if (( json_epoch > tasks_epoch )); then
       local cmd; cmd=$(orbit_run_command_type "$latest")
@@ -1075,16 +1138,29 @@ emit_human() {
     primary_record=$(echo "$exploring_arr" | jq -c --arg n "$primary_name" '.[] | select(.name == $n)')
   fi
   if [[ -n "$primary_record" && "$primary_record" != "null" ]]; then
-    local pphase ptasks pattn
+    local pphase ptasks pattn ptouched_iso ptouched rel
     pphase=$(echo "$primary_record" | jq -r '.phase')
     ptasks=$(echo "$primary_record" | jq -r 'if (.tasks // null) != null and (.tasks.total // 0) > 0 then "\(.tasks.completed)/\(.tasks.total) tasks" else "" end')
     pattn=$(echo "$primary_record" | jq -r 'if ((.attention // []) | length) > 0 then "\(.attention | length) attention" else "" end')
+
+    # Per orbit-status-output spec: primary line covers task progress,
+    # attention counts, AND last-touched relative time (caught missing by
+    # external system review iter-1).
+    ptouched_iso=$(echo "$primary_record" | jq -r '.last_touched // empty')
+    ptouched=""
+    if [[ -n "$ptouched_iso" ]]; then
+      rel=$(relative_time "$ptouched_iso")
+      [[ "$rel" != "?" ]] && ptouched="touched $rel"
+    fi
 
     # Compose ' · '-separated state segments
     local primary_line=""
     [[ -n "$ptasks" ]] && primary_line="$ptasks"
     if [[ -n "$pattn" ]]; then
       [[ -n "$primary_line" ]] && primary_line="$primary_line · $pattn" || primary_line="$pattn"
+    fi
+    if [[ -n "$ptouched" ]]; then
+      [[ -n "$primary_line" ]] && primary_line="$primary_line · $ptouched" || primary_line="$ptouched"
     fi
     [[ -n "$primary_line" ]] && printf '  %s\n' "$primary_line"
 
@@ -1146,12 +1222,24 @@ emit_human() {
   rec_cmd=$(echo "$focus" | jq -r '.recommended_next.command')
   rec_args=$(echo "$focus" | jq -r '.recommended_next.args')
   rec_reason=$(echo "$focus" | jq -r '.recommended_next.reason')
-  if [[ -n "$rec_args" && "$rec_args" != "null" && "$rec_args" != "" ]]; then
-    echo "Next: $rec_cmd $rec_args"
+  # Render "Next: <cmd> <args>" only when command is parseable. For prose
+  # next_recommended strings (multi-alternative narratives), command/args
+  # are null and reason carries the full text — skip the empty "Next:"
+  # header and just emit the prose. Caught during W1/W2/W3 batch when the
+  # corrected latest-run selection started surfacing prose recommendations.
+  if [[ -n "$rec_cmd" && "$rec_cmd" != "null" && "$rec_cmd" != "" ]]; then
+    if [[ -n "$rec_args" && "$rec_args" != "null" && "$rec_args" != "" ]]; then
+      echo "Next: $rec_cmd $rec_args"
+    else
+      echo "Next: $rec_cmd"
+    fi
+    echo "  \"$rec_reason\""
   else
-    echo "Next: $rec_cmd"
+    # Prose recommendation with no parseable leading command — emit a
+    # neutral header and the verbatim reason.
+    echo "Next:"
+    echo "  $rec_reason"
   fi
-  echo "  \"$rec_reason\""
 
   # Under --detail (and orbit project), surface the recommendation's source.
   if $DETAIL; then

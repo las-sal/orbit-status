@@ -1,0 +1,89 @@
+{
+  "command": "address-reviews",
+  "timestamp": "2026-05-20T16:17:15Z",
+  "change": "bootstrap-orbit-status-cli",
+  "iteration": 4,
+  "source": "from_file",
+  "source_path": "openspec/changes/bootstrap-orbit-status-cli/.orbit-runs/external-system-2026-05-20T16-00-44Z.md",
+  "external_reviewer": "GPT-5 Codex",
+  "executed_by": "claude in-session, batch mode (user-authorized: 'Batch all 3 (Recommended)')",
+  "input_findings_summary": {
+    "critical": 0,
+    "warning": 3,
+    "suggestion": 0,
+    "discovered": 3,
+    "walked": 3,
+    "subset_specified": false
+  },
+  "pushback_verification": "All 3 findings verified against current state. No artifacts modified between the external review and this address-reviews invocation. 0 stale suppressions. External reviewer (GPT-5 Codex) ran openspec validate --strict, bash -n on the binary + test runner, and tests/run.sh (93 passed) — independently verified the iter-1 internal review's fixes landed and looked for additional drift (found none).",
+  "anchoring_caveat_vindicated": "The iter-1 internal system review's finding S3 explicitly recommended this external pass to catch what in-context anchoring suppressed. All 3 findings GPT-5 Codex surfaced were missed by the in-context internal review — strong evidence for the recommended-session/fresh-context discipline.",
+  "resolution_summary": {
+    "resolved": 4,
+    "stale": 0,
+    "deferred": 0,
+    "escalated": 0
+  },
+  "resolutions": [
+    {
+      "finding_index": 1,
+      "external_finding_title": "Latest run selection sorts by command prefix instead of embedded timestamp",
+      "file": ".claude/skills/openspec-status/bin/opsx-status:285",
+      "severity": "WARNING",
+      "classification": "trivial_fix",
+      "action": "Added filename_ts_epoch() helper that extracts YYYY-MM-DDTHH-MM-SSZ from .orbit-runs filenames and converts to POSIX epoch. Rewrote list_orbit_runs() to sort entries by the extracted timestamp using a tab-separated sort key (printf '%s\\t%s', sort, cut -f2-) instead of full-filename sort. Now latest_orbit_run() correctly picks the timestamp-newest JSON regardless of command prefix.",
+      "regression_test": "tests/run.sh test_recommendation_spec: 'W1 regression' — fixture with review-system-2026-05-20T09-00-00Z.json + address-reviews-2026-05-20T10-00-00Z.json; verifies tier-1 reason contains the address-reviews JSON's content (NEWER), not the review-system's (OLDER, alphabetically later)",
+      "ripple_flagged": []
+    },
+    {
+      "finding_index": 2,
+      "external_finding_title": "Phase freshness uses JSON file mtime instead of the run timestamp",
+      "file": ".claude/skills/openspec-status/bin/opsx-status:480",
+      "severity": "WARNING",
+      "classification": "trivial_fix",
+      "action": "Updated infer_phase rule 2 to call filename_ts_epoch() for the JSON's semantic timestamp instead of mtime_epoch() (which reads filesystem mtime — unstable under clone/cp/touch/checkout). Comparison against tasks.md mtime is unchanged.",
+      "regression_test": "tests/run.sh test_phase_model_spec: 'W2 regression' — fixture with review-system-2024-01-01T00-00-00Z.json whose FILE mtime is touched to now; phase resolves to applying (rule 3 wins because filename ts is ancient), not reviewing (rule 2 must NOT fire on mtime alone)",
+      "ripple_flagged": []
+    },
+    {
+      "finding_index": 3,
+      "external_finding_title": "Default human summary omits last-touched time",
+      "file": ".claude/skills/openspec-status/bin/opsx-status:1080",
+      "severity": "WARNING",
+      "classification": "trivial_fix",
+      "action": "Added relative_time() helper that converts ISO-8601 to '2h ago' / '3d ago' / 'just now' etc. Updated emit_human's primary line composition to include a 'touched <rel>' segment derived from primary_record.last_touched, joined into the existing tasks · attention list with the same '·' separator.",
+      "regression_test": "tests/run.sh test_output_spec: 'W3 regression' — runs opsx-status against the mid-apply fixture and asserts the human output contains the literal substring 'touched'",
+      "ripple_flagged": []
+    },
+    {
+      "finding_index": 4,
+      "external_finding_title": "(side-effect discovered by W1 fix) Prose next_recommended renders as empty 'Next: ' header",
+      "file": ".claude/skills/openspec-status/bin/opsx-status (emit_human Next-line section)",
+      "severity": "WARNING",
+      "classification": "trivial_fix",
+      "action": "Not in the external review's findings list, but exposed when W1's fix brought the actually-correct latest JSON into the rendering path (the address-reviews JSON has a prose next_recommended with multiple alternatives — not parseable to /opsx:<verb> token). Refactored emit_human to: if command is parseable, render 'Next: <cmd> <args>' + quoted reason (existing behavior); else render 'Next:' header + verbatim reason on the next line (new branch).",
+      "discovered_by": "visual smoke test after applying W1 fix",
+      "regression_test": "Implicitly covered by W3 regression which uses the mid-apply fixture; explicit prose-render test deferred to a follow-up",
+      "ripple_flagged": []
+    }
+  ],
+  "ripple_flagged_files_aggregate": [],
+  "post_resolution_state": {
+    "remaining_findings_in_scope": 0,
+    "escalated_findings_persisted": 0,
+    "tests_pass": true,
+    "test_count_change": {
+      "before": 93,
+      "after": 96,
+      "delta": "+3 regression tests (W1 mixed-prefix sort, W2 mtime-vs-filename-ts, W3 touched-segment)"
+    },
+    "binary_changes": {
+      "new_helpers": ["filename_ts_epoch", "relative_time"],
+      "modified_functions": ["list_orbit_runs", "infer_phase", "emit_human (primary line + Next: render)"],
+      "version_bump": "0.1.0-chunk4 → 0.1.0-chunk5"
+    },
+    "validate_passes": true,
+    "visual_smoke_check": "opsx-status output: 'You are reviewing bootstrap-orbit-status-cli. 75/79 tasks · 1 attention · touched 5m ago' — correctly sourced from the latest address-reviews JSON (was sourcing from the stale review-system JSON before W1 fix); 'touched 5m ago' segment now present (was absent before W3 fix); prose 'Next:' renders cleanly (was empty 'Next: ' before the side-effect fix)"
+  },
+  "final_assessment": "All 3 external system review findings resolved + 1 side-effect bug caught and fixed. 96/96 tests passing. The external review pass demonstrated the value of the anchoring-discipline: 3 real correctness/contract bugs missed by the in-context internal review were surfaced by the fresh-context external pass. Ready to archive.",
+  "next_recommended": "Either (a) commit + push the 4 fixes + 3 new regression tests, then proceed to /opsx:archive bootstrap-orbit-status-cli, or (b) run another iter-2 external review pass to verify the fixes hold (orbit#13's framework: at this iteration, fresh-vs-seeded becomes a real choice — seeded with GPT-5 Codex iter-1 would verify their findings landed; fresh with a different model would catch any net-new issues from this batch). (a) is the practical close-out — both warnings were trivial fixes with regression tests; (b) is the rigorous belt-and-suspenders close-out."
+}
